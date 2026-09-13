@@ -58,7 +58,7 @@ def get_representative_admin(
 def get_representative(
     rep_id: uuid.UUID, locale: str = Depends(get_locale), db: Session = Depends(get_db)
 ) -> RepresentativeResponse:
-    return service.to_responses(db, [service.get_one(db, rep_id)], locale)[0]
+    return service.to_responses(db, [service.get_public(db, rep_id)], locale)[0]
 
 
 @router.post("", response_model=RepresentativeResponse, status_code=201)

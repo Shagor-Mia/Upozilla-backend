@@ -1,8 +1,11 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
 from app.core.ws_manager import manager as ws_manager
@@ -60,6 +63,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(IntegrityError)
+async def handle_integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:
+    """Safety net for the class of bug a 2026-09-13 QA pass found repeated
+    across several modules (places/hospitals/markets/government_services/
+    businesses/news/faqs): a create/update endpoint writes straight through to
+    `db.commit()` on a body that references a nonexistent foreign key (or,
+    for news/faqs, an invalid `status` enum) with no existence/enum check
+    beforehand, so a DB constraint violation surfaces as a bare unhandled 500.
+    This turns any such violation into a clean 422 everywhere, present and
+    future, without needing every call site individually audited and fixed -
+    though the worst offenders (places/hospitals/markets/services FK checks,
+    news/faqs status enums) were also fixed at the source the same day.
+    `get_db`'s `finally: db.close()` has already run by the time this handler
+    sees the exception, so no explicit rollback is needed here."""
+    logger.warning("Unhandled IntegrityError on %s %s: %s", request.method, request.url.path, exc.orig)
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "This request conflicts with an existing record or references one that doesn't exist."},
+    )
 
 api_v1 = settings.API_V1_PREFIX
 app.include_router(meta_router, prefix=api_v1)

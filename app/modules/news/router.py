@@ -12,6 +12,7 @@ from app.modules.news.schemas import (
     NewsArticleCreate,
     NewsArticleDetailResponse,
     NewsArticleResponse,
+    NewsArticleUpdate,
     NewsSourceResponse,
 )
 
@@ -64,3 +65,16 @@ def create_article(
     actor: CurrentUser = Depends(require_permission(Permission.NEWS_MANAGE, Permission.CONTENT_MANAGE)),
 ) -> NewsArticleResponse:
     return NewsArticleResponse.model_validate(service.create_article(db, payload, background_tasks, actor))
+
+
+@router.patch("/{article_id}", response_model=NewsArticleResponse)
+def update_article(
+    article_id: uuid.UUID,
+    payload: NewsArticleUpdate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    actor: CurrentUser = Depends(require_permission(Permission.NEWS_MANAGE, Permission.CONTENT_MANAGE)),
+) -> NewsArticleResponse:
+    """Was previously missing entirely - a draft article had no way to be
+    published (or otherwise edited) via the API once created."""
+    return NewsArticleResponse.model_validate(service.update_article(db, article_id, payload, background_tasks, actor))

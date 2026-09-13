@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import BackgroundTasks, Request
+from fastapi import BackgroundTasks, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core import embeddings, news_ai
@@ -10,7 +10,7 @@ from app.core.pagination import PageParams
 from app.core.tenant import resolve_tenant_id
 from app.db.models.ai import KnowledgeSourceType
 from app.db.models.news import NewsArticle, NewsSource
-from app.modules.news.schemas import NewsArticleCreate
+from app.modules.news.schemas import NewsArticleCreate, NewsArticleUpdate
 
 
 def _schedule_reindex(background_tasks: BackgroundTasks, article: NewsArticle) -> None:
@@ -72,5 +72,34 @@ def create_article(
     db.commit()
     db.refresh(article)
     news_ai.schedule_enrich(background_tasks, article.id)
+    _schedule_reindex(background_tasks, article)
+    return article
+
+
+def get_article_for_admin(db: Session, article_id: uuid.UUID, actor: CurrentUser) -> NewsArticle:
+    """Any status, tenant-scoped - the admin-edit counterpart to
+    `get_article_by_slug`'s public/published-only lookup."""
+    tenant_id = resolve_tenant_id(db, actor)
+    query = db.query(NewsArticle).filter(NewsArticle.id == article_id)
+    if tenant_id:
+        query = query.filter(NewsArticle.tenant_id == tenant_id)
+    article = query.first()
+    if article is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="article not found")
+    return article
+
+
+def update_article(
+    db: Session,
+    article_id: uuid.UUID,
+    payload: NewsArticleUpdate,
+    background_tasks: BackgroundTasks,
+    actor: CurrentUser,
+) -> NewsArticle:
+    article = get_article_for_admin(db, article_id, actor)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(article, field, value)
+    db.commit()
+    db.refresh(article)
     _schedule_reindex(background_tasks, article)
     return article

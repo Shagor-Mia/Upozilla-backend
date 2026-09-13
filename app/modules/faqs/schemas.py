@@ -1,9 +1,15 @@
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel
 
 from app.core.i18n import localized_value
 from app.db.models.faq import Faq
+
+# Mirrors the DB CheckConstraint("status IN ('draft', 'published')") on
+# faqs.status - validated here too so a bad value 422s instead of hitting
+# that constraint as an unhandled IntegrityError.
+FaqStatus = Literal["draft", "published"]
 
 
 class FaqCreate(BaseModel):
@@ -13,7 +19,7 @@ class FaqCreate(BaseModel):
     answer_bn: str
     answer_en: str | None = None
     answer_ar: str | None = None
-    status: str = "published"
+    status: FaqStatus = "published"
 
 
 class FaqUpdate(BaseModel):
@@ -23,7 +29,7 @@ class FaqUpdate(BaseModel):
     answer_bn: str | None = None
     answer_en: str | None = None
     answer_ar: str | None = None
-    status: str | None = None
+    status: FaqStatus | None = None
 
 
 class FaqAdminResponse(BaseModel):

@@ -5,7 +5,7 @@ from fastapi import BackgroundTasks, HTTPException, status
 from sqlalchemy.orm import Query, Session
 
 from app.core import translation
-from app.core.dependencies import CurrentUser
+from app.core.dependencies import CurrentUser, require_phone_verified
 from app.core.i18n import localized_value
 from app.core.pagination import PageParams
 from app.core.rbac import Permission
@@ -177,6 +177,14 @@ def _get_editable(db: Session, shop_id: uuid.UUID, actor: CurrentUser) -> tuple[
 
 def update(db: Session, actor: CurrentUser, shop_id: uuid.UUID, payload: ShopUpdate) -> Shop:
     shop, is_owner = _get_editable(db, shop_id, actor)
+    # Phone verification is a seller write-gate (Section 5.8), not a moderator
+    # one - a moderator/admin approving or featuring a shop shouldn't need
+    # their *own* phone verified. Checked here (DB-backed, like the router
+    # dependency it replaces for this owner-only path) rather than on the
+    # whole endpoint, so `require_permission(MARKETPLACE_MODERATE)` alone is
+    # enough for the moderator branch.
+    if is_owner:
+        require_phone_verified(current_user=actor, db=db)
     changes = payload.model_dump(exclude_unset=True)
 
     if "category_id" in changes:

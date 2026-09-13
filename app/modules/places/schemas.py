@@ -1,9 +1,17 @@
 import uuid
+from typing import Literal
 
 from pydantic import BaseModel
 
 from app.core.i18n import localized_value
 from app.db.models.place import Place, PlaceCategory
+
+# `places.status` has no DB CheckConstraint (unlike faqs/news), so an
+# unvalidated string here doesn't 500 - it silently persists garbage and the
+# place vanishes from every public listing (which only shows "published")
+# with no way back except guessing the right string again. Validate at the
+# same draft/published convention the rest of the codebase uses.
+PlaceStatus = Literal["draft", "published"]
 
 
 class PlaceCreate(BaseModel):
@@ -38,7 +46,7 @@ class PlaceUpdate(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     is_featured: bool | None = None
-    status: str | None = None
+    status: PlaceStatus | None = None
 
 
 class PlaceAdminResponse(BaseModel):

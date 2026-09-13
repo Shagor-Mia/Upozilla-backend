@@ -69,7 +69,24 @@ def list_mine(db: Session, user_id: uuid.UUID) -> list[Representative]:
 
 
 def get_one(db: Session, rep_id: uuid.UUID) -> Representative:
+    """Status-agnostic - used by the admin raw-fields view and by `update()`,
+    both of which legitimately need to reach a non-active representative
+    (e.g. an owner editing their own record while it's `inactive`)."""
     rep = db.query(Representative).filter(Representative.id == rep_id).first()
+    if rep is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="representative not found")
+    return rep
+
+
+def get_public(db: Session, rep_id: uuid.UUID) -> Representative:
+    """The public single-item lookup - same `status == ACTIVE` visibility rule
+    as `list_public`, so an inactive representative's (unmasked) phone can't
+    be reached by guessing its id once it's no longer listed."""
+    rep = (
+        db.query(Representative)
+        .filter(Representative.id == rep_id, Representative.status == RepresentativeStatus.ACTIVE.value)
+        .first()
+    )
     if rep is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="representative not found")
     return rep

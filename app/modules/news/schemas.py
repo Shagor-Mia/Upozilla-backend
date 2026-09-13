@@ -1,7 +1,13 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
+
+# Mirrors the DB CheckConstraint("status IN ('draft', 'published')") on
+# news_articles.status - validated here too so a bad value 422s instead of
+# hitting that constraint as an unhandled IntegrityError.
+NewsArticleStatus = Literal["draft", "published"]
 
 
 class NewsArticleCreate(BaseModel):
@@ -15,7 +21,27 @@ class NewsArticleCreate(BaseModel):
     original_url: str | None = None
     image: str | None = None
     published_at: datetime | None = None
-    status: str = "draft"
+    status: NewsArticleStatus = "draft"
+    tags: list[str] | None = None
+
+
+class NewsArticleUpdate(BaseModel):
+    """Lets an admin publish a draft (or otherwise edit an article) - there
+    was previously no way to change an article after creation at all, even
+    though `list_all_for_admin`'s own docstring says a draft should be
+    "found and published again"."""
+
+    source_id: uuid.UUID | None = None
+    location_id: uuid.UUID | None = None
+    category: str | None = None
+    title: str | None = None
+    slug: str | None = None
+    summary: str | None = None
+    body: str | None = None
+    original_url: str | None = None
+    image: str | None = None
+    published_at: datetime | None = None
+    status: NewsArticleStatus | None = None
     tags: list[str] | None = None
 
 
