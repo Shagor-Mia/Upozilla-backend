@@ -1,0 +1,58 @@
+# Render Blueprint — deploys the api/worker/beat services from the same
+# Dockerfile used locally (Section 6.1). DATABASE_URL/REDIS_URL point at
+# externally-managed Supabase Postgres / Upstash Redis (Section 2), not
+# Render-provisioned databases — set the `sync: false` values in the Render
+# dashboard, they are not stored here.
+services:
+  - type: web
+    name: upazila-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+
+  - type: worker
+    name: upazila-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A app.workers.celery_app worker --loglevel=info
+    plan: starter
+    envVars:
+      - key: ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+
+  - type: worker
+    name: upazila-beat
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: celery -A app.workers.celery_app beat --loglevel=info
+    plan: starter
+    envVars:
+      - key: ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false

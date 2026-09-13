@@ -1,0 +1,63 @@
+services:
+  api:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+      # Extra host port, same container port - the Android emulator's
+      # 10.0.2.2 NAT hairpin is IPv4-only and on this machine collides with
+      # an unrelated php dev server bound to 127.0.0.1:8000 (a different
+      # project, left running on purpose). This second mapping lets the
+      # emulator reach this backend without touching that other process.
+      - "8010:8000"
+    volumes:
+      - .:/code
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - redis
+
+  worker:
+    build: .
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    volumes:
+      - .:/code
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - redis
+
+  beat:
+    build: .
+    command: celery -A app.workers.celery_app beat --loglevel=info
+    volumes:
+      - .:/code
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    # pgvector/pgvector:pg16 = official Postgres 16 image + the `vector`
+    # extension binary (Section 5.13 AI/Vector, Phase 4) - same data format as
+    # postgres:16-alpine, existing postgres_data volume is compatible.
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: upazila
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+
+volumes:
+  postgres_data:
