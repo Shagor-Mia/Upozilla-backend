@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import HTTPException, status
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core import runtime_settings
@@ -82,7 +82,7 @@ def register_user(db: Session, payload: RegisterRequest) -> User:
 
     existing = db.query(User).filter(
         or_(
-            User.email == payload.email if payload.email else False,
+            func.lower(User.email) == payload.email.lower() if payload.email else False,
             User.phone == payload.phone if payload.phone else False,
         )
     ).first()
@@ -104,8 +104,11 @@ def register_user(db: Session, payload: RegisterRequest) -> User:
 
 
 def authenticate_user(db: Session, payload: LoginRequest) -> User:
+    # `identifier` is already normalized by LoginRequest (lowercased email or
+    # E.164 phone), but comparing case-insensitively too protects any account
+    # whose email was stored with different casing before that validator existed.
     user = db.query(User).filter(
-        or_(User.email == payload.identifier, User.phone == payload.identifier)
+        or_(func.lower(User.email) == payload.identifier.lower(), User.phone == payload.identifier)
     ).first()
     if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
@@ -266,7 +269,7 @@ def login_with_facebook(db: Session, access_token: str) -> User:
     )
     email = profile.get("email")
     if user is None and email:
-        user = db.query(User).filter(User.email == email).first()
+        user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
         if user is not None and user.oauth_provider is None:
             user.oauth_provider = OAUTH_PROVIDER_FACEBOOK
             user.oauth_id = facebook_id
@@ -322,7 +325,7 @@ def login_with_google(db: Session, id_token: str) -> User:
     )
     email = claims.get("email")
     if user is None and email:
-        user = db.query(User).filter(User.email == email).first()
+        user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
         if user is not None and user.oauth_provider is None:
             user.oauth_provider = OAUTH_PROVIDER_GOOGLE
             user.oauth_id = google_id

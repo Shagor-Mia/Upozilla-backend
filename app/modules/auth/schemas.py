@@ -29,10 +29,32 @@ class RegisterRequest(BaseModel):
     def normalize_phone(cls, v: str | None) -> str | None:
         return normalize_bd_phone(v) if v else None
 
+    @field_validator("email")
+    @classmethod
+    def lowercase_email(cls, v: EmailStr | None) -> EmailStr | None:
+        return v.lower() if v else v
+
 
 class LoginRequest(BaseModel):
     identifier: str  # email or phone
     password: str
+
+    @field_validator("identifier")
+    @classmethod
+    def normalize_identifier(cls, v: str) -> str:
+        """Accepts whatever a user actually types: an email in any case, or a
+        BD mobile number in any of the formats registration/OTP already
+        normalize (local `01...`, `880...`, `+880...`). Anything that isn't a
+        valid phone shape is left as-is rather than raising here - `identifier`
+        also legitimately fails to match anything for a wrong login, and this
+        validator must never turn a bad-password case into a 422."""
+        v = v.strip()
+        if "@" in v:
+            return v.lower()
+        try:
+            return normalize_bd_phone(v)
+        except ValueError:
+            return v
 
 
 class TokenResponse(BaseModel):

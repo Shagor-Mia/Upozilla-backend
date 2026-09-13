@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.models import User
@@ -15,8 +16,8 @@ def update_profile(db: Session, user_id: uuid.UUID, payload: UserProfileUpdate) 
 
     changes = payload.model_dump(exclude_unset=True)
 
-    if "email" in changes and changes["email"] and changes["email"] != user.email:
-        if db.query(User).filter(User.email == changes["email"], User.id != user_id).first():
+    if "email" in changes and changes["email"] and changes["email"].lower() != (user.email or "").lower():
+        if db.query(User).filter(func.lower(User.email) == changes["email"].lower(), User.id != user_id).first():
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="email already in use")
 
     if "phone" in changes and changes["phone"] != user.phone:

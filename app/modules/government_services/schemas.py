@@ -1,10 +1,15 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
 from app.core.i18n import localized_value
 from app.db.models.service import Service, ServiceCategory
+
+# See the identical comment in app/modules/places/schemas.py - services.status
+# has no DB CheckConstraint either, so this is app-level-only validation.
+ServiceStatus = Literal["draft", "published"]
 
 
 class ServiceCategoryResponse(BaseModel):
@@ -93,7 +98,7 @@ class ServiceUpdate(BaseModel):
     office_name_en: str | None = None
     office_name_ar: str | None = None
     office_contact: str | None = None
-    status: str | None = None
+    status: ServiceStatus | None = None
 
 
 class ServiceAdminResponse(BaseModel):

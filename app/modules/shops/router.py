@@ -105,6 +105,9 @@ def update_shop(
     payload: ShopUpdate,
     locale: str = Depends(get_locale),
     db: Session = Depends(get_db),
-    actor: CurrentUser = Depends(require_phone_verified),
+    actor: CurrentUser = Depends(get_current_user),
 ) -> ShopResponse:
+    """Phone verification is enforced inside `service.update` only for the
+    owner-editing path - a moderator/admin (gated there by MARKETPLACE_MODERATE
+    instead) shouldn't need their own phone verified to approve/feature a shop."""
     return service.to_responses(db, [service.update(db, actor, shop_id, payload)], locale)[0]

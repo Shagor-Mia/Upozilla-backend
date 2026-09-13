@@ -15,6 +15,11 @@ class UserProfileUpdate(BaseModel):
     def normalize_phone(cls, v: str | None) -> str | None:
         return normalize_bd_phone(v) if v else None
 
+    @field_validator("email")
+    @classmethod
+    def lowercase_email(cls, v: EmailStr | None) -> EmailStr | None:
+        return v.lower() if v else v
+
 
 class UserProfileResponse(BaseModel):
     id: uuid.UUID

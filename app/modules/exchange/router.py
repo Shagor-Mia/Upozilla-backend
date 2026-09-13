@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -141,9 +141,11 @@ def delete_listing(
 def reveal_contact(
     listing_id: uuid.UUID,
     db: Session = Depends(get_db),
-    _: CurrentUser = Depends(require_phone_verified),
+    actor: CurrentUser = Depends(require_phone_verified),
 ) -> ContactRevealResponse:
     listing = get_public_listing(db, ListingType.EXCHANGE, listing_id)
+    if listing.seller_user_id == actor.uuid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="you cannot reveal contact info on your own listing")
     name, phone = service.reveal_seller_phone(db, listing)
     return ContactRevealResponse(seller_name=name, phone=phone)
 
