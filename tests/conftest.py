@@ -2,6 +2,7 @@
 test DB yet). Every row they create is tracked and deleted on teardown so the
 local dev data stays clean."""
 
+import os
 import uuid
 from collections.abc import Iterator
 
@@ -9,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import or_
 
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.rbac import Role
 from app.core.redis_client import get_redis
@@ -38,6 +40,32 @@ from app.db.models import (
     UserTrustScore,
 )
 from app.main import app
+
+
+def _guard_against_remote_database() -> None:
+    """Refuse to run the suite against anything but a local dev database.
+
+    2026-09-13 incident: `backend/.env`'s DATABASE_URL was pointed at the live
+    Supabase project (Section 6 free-hosting setup), so a local pytest run hit
+    production directly and left ~40 QA rows (some with mangled bn text) in the
+    only tenant - cleaned up by hand afterwards. This fixture's docstring above
+    already assumed "the compose Postgres" - this makes that assumption a hard
+    requirement instead of a comment nobody re-checks.
+    """
+    url = settings.DATABASE_URL
+    host = url.split("@")[-1].split("/")[0].split(":")[0].lower() if "@" in url else ""
+    allowed_hosts = {"postgres", "localhost", "127.0.0.1", "::1"}
+    if host in allowed_hosts or os.environ.get("ALLOW_REMOTE_TEST_DB") == "1":
+        return
+    raise RuntimeError(
+        f"Refusing to run tests against DATABASE_URL host '{host}' - this looks like a "
+        "remote/managed database, not the local docker-compose Postgres. Point .env at "
+        "the compose 'postgres' service for test runs, or set ALLOW_REMOTE_TEST_DB=1 if "
+        "you really mean to run destructive tests against it."
+    )
+
+
+_guard_against_remote_database()
 
 
 class Actors:
