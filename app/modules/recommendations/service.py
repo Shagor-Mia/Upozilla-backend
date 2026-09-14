@@ -100,12 +100,18 @@ def _fetch_bundle(db: Session, viewer: CurrentUser | None, locale: str, location
     hospitals_query = db.query(Hospital)  # no status column (Section 17 Phase 1) - always public
     if location_id is not None:
         hospitals_query = hospitals_query.filter(Hospital.location_id == location_id)
-    hospitals = [HospitalResponse.from_model(h, locale) for h in hospitals_query.limit(limit).all()]
+    hospitals = [
+        HospitalResponse.from_model(h, locale)
+        for h in hospitals_query.order_by(Hospital.created_at.desc()).limit(limit).all()
+    ]
 
     markets_query = db.query(Market)
     if location_id is not None:
         markets_query = markets_query.filter(Market.location_id == location_id)
-    markets = [MarketResponse.from_model(m, locale) for m in markets_query.limit(limit).all()]
+    markets = [
+        MarketResponse.from_model(m, locale)
+        for m in markets_query.order_by(Market.created_at.desc()).limit(limit).all()
+    ]
 
     services_query = db.query(Service).filter(Service.status == "published")
     if location_id is not None:

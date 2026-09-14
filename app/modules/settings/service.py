@@ -20,10 +20,19 @@ from app.modules.settings.schemas import (
 )
 
 
-def get_public_settings(site_name: str = "Upazila Digital Ecosystem") -> PublicSettings:
+DEFAULT_SITE_NAME = "Upazila Digital Ecosystem"
+
+
+def get_public_settings() -> PublicSettings:
+    """`site_name`/`site_url`/`site_description` used to be hardcoded (an
+    unused `site_name` default param here, and a frontend-only env var for
+    the URL) - now real admin-editable settings (Section 16 SEO follow-up),
+    same database-row-with-env-fallback pattern as gtm_id/mapbox_token."""
     values = runtime_settings.public_values()
     return PublicSettings(
-        site_name=site_name,
+        site_name=values.get("site_name") or DEFAULT_SITE_NAME,
+        site_url=values.get("site_url") or "",
+        site_description=values.get("site_description"),
         sms_demo_mode=(runtime_settings.get("sms_gateway") or "console") == "console",
         turnstile_site_key=values.get("turnstile_site_key"),
         facebook_app_id=values.get("facebook_app_id"),
