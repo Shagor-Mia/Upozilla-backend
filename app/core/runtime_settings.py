@@ -35,6 +35,22 @@ class SettingDefinition:
 
 DEFINITIONS: tuple[SettingDefinition, ...] = (
     SettingDefinition(
+        "site_name", "Site name", "general", is_public=True,
+        help="Shown in page titles, the browser tab, and shared-link previews. Defaults to "
+             "\"Upazila Digital Ecosystem\" if left blank.",
+    ),
+    SettingDefinition(
+        "site_url", "Site URL", "general", is_public=True,
+        help="Full https URL of the public website, e.g. https://example.com (no trailing slash). "
+             "Used to build canonical links, the sitemap, and shared-link previews - get this wrong "
+             "and those break sitewide, so double-check it after changing.",
+    ),
+    SettingDefinition(
+        "site_description", "Default meta description", "general", is_public=True,
+        help="Fallback description search engines and AI answer engines show for the homepage and "
+             "any page that doesn't set its own. Aim for one plain sentence, under ~160 characters.",
+    ),
+    SettingDefinition(
         "sms_gateway", "SMS gateway", "sms", env_attr="SMS_GATEWAY", kind="select", options=("console", "http"),
         help="console = no SMS is sent, the OTP code is shown on screen (demo mode). http = real gateway below.",
     ),

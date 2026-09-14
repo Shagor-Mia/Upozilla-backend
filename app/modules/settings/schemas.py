@@ -7,6 +7,8 @@ class PublicSettings(BaseModel):
     """Unauthenticated config for web/app clients - public keys only, never secrets."""
 
     site_name: str
+    site_url: str
+    site_description: str | None
     sms_demo_mode: bool
     turnstile_site_key: str | None
     facebook_app_id: str | None
