@@ -15,6 +15,7 @@ from app.db.models.contract import (
     WorkContract,
 )
 from app.db.models.faq import Faq
+from app.db.models.govt_office import GovtOffice, GovtOfficeCategory
 from app.db.models.exchange import (
     ExchangeListing,
     ListingFavorite,
@@ -46,6 +47,7 @@ from app.db.models.otp import OtpCode, OtpPurpose
 from app.db.models.place import Place, PlaceReview
 from app.db.models.rbac import AuditLog, PermissionRow, RolePermission, RoleRow, UserRole
 from app.db.models.representative import Representative, RepresentativePosition, RepresentativeStatus
+from app.db.models.school import School, SchoolType
 from app.db.models.service import LicenseApplication, Service, ServiceCategory
 from app.db.models.settings import PlatformSetting
 from app.db.models.shop import Shop, ShopCategory, ShopStatus
@@ -99,6 +101,8 @@ __all__ = [
     "KnowledgeChunk",
     "KnowledgeSourceType",
     "Faq",
+    "GovtOffice",
+    "GovtOfficeCategory",
     "ShopCategory",
     "Shop",
     "ShopStatus",
@@ -116,4 +120,6 @@ __all__ = [
     "ContractProblemCategory",
     "ContractProblemStatus",
     "ContractDisputeResolution",
+    "School",
+    "SchoolType",
 ]

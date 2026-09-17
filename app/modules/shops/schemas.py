@@ -27,8 +27,22 @@ class ShopCategoryResponse(BaseModel):
         )
 
 
+class ShopCategoryCreate(BaseModel):
+    name_bn: str = Field(min_length=2, max_length=100)
+    name_en: str | None = Field(default=None, max_length=100)
+
+    @field_validator("name_bn", "name_en")
+    @classmethod
+    def strip(cls, v: str | None) -> str | None:
+        return v.strip() if v else v
+
+
 class ShopCreate(BaseModel):
-    market_id: uuid.UUID
+    # Exactly one of these two must be given: `market_id` for a stall inside
+    # a market/bazaar (location is inherited from the market), `location_id`
+    # for a standalone shop anywhere in the upazila.
+    market_id: uuid.UUID | None = None
+    location_id: uuid.UUID | None = None
     category_id: uuid.UUID
     name: str = Field(min_length=2, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
@@ -68,7 +82,8 @@ class ShopAdminResponse(BaseModel):
     `name`/`description` here are the bn-only stored values, not locale-resolved."""
 
     id: uuid.UUID
-    market_id: uuid.UUID
+    market_id: uuid.UUID | None
+    location_id: uuid.UUID
     category_id: uuid.UUID
     name: str
     description: str | None
@@ -83,6 +98,7 @@ class ShopAdminResponse(BaseModel):
         return cls(
             id=shop.id,
             market_id=shop.market_id,
+            location_id=shop.location_id,
             category_id=shop.category_id,
             name=shop.name_bn,
             description=shop.description_bn,
@@ -96,8 +112,8 @@ class ShopAdminResponse(BaseModel):
 
 class ShopResponse(BaseModel):
     id: uuid.UUID
-    market_id: uuid.UUID
-    market_name: str
+    market_id: uuid.UUID | None
+    market_name: str | None
     category_id: uuid.UUID
     category_name: str
     name: str
@@ -113,7 +129,7 @@ class ShopResponse(BaseModel):
 
 
 def to_response(
-    shop: Shop, *, market_name: str, category_name: str, locale: str, seller: SellerSummary
+    shop: Shop, *, market_name: str | None, category_name: str, locale: str, seller: SellerSummary
 ) -> ShopResponse:
     return ShopResponse(
         id=shop.id,

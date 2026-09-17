@@ -17,11 +17,12 @@ router = APIRouter(prefix="/businesses", tags=["businesses"])
 def list_businesses(
     request: Request,
     location_id: uuid.UUID | None = None,
+    category: str | None = None,
     near: NearParams = Depends(),
     locale: str = Depends(get_locale),
     db: Session = Depends(get_db),
 ) -> list[BusinessResponse]:
-    rows = service.list_businesses(db, location_id=location_id, near=near, request=request)
+    rows = service.list_businesses(db, location_id=location_id, category=category, near=near, request=request)
     return [with_distance(BusinessResponse.from_model(b, locale), d) for b, d in rows]
 
 

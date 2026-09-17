@@ -17,6 +17,7 @@ from app.modules.contracts.router import router as contracts_router
 from app.modules.exchange.router import router as exchange_router
 from app.modules.faqs.router import router as faqs_router
 from app.modules.government_services.router import router as government_services_router
+from app.modules.govt_offices.router import router as govt_offices_router
 from app.modules.hospitals.router import router as hospitals_router
 from app.modules.locations.router import router as locations_router
 from app.modules.marketplace.router import router as marketplace_router
@@ -29,6 +30,7 @@ from app.modules.news.router import router as news_router
 from app.modules.places.router import router as places_router
 from app.modules.recommendations.router import router as recommendations_router
 from app.modules.representatives.router import router as representatives_router
+from app.modules.schools.router import router as schools_router
 from app.modules.sellers.router import router as sellers_router
 from app.modules.settings.router import admin_router as settings_admin_router
 from app.modules.settings.router import router as settings_router
@@ -48,7 +50,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title="Upazila Digital Ecosystem API",
+    title="Homna API",
     version="0.3.0",
     lifespan=lifespan,
     docs_url=None if settings.is_production else "/docs",
@@ -95,6 +97,8 @@ app.include_router(locations_router, prefix=api_v1)
 app.include_router(places_router, prefix=api_v1)
 app.include_router(government_services_router, prefix=api_v1)
 app.include_router(hospitals_router, prefix=api_v1)
+app.include_router(schools_router, prefix=api_v1)
+app.include_router(govt_offices_router, prefix=api_v1)
 app.include_router(markets_router, prefix=api_v1)
 app.include_router(shops_router, prefix=api_v1)
 app.include_router(representatives_router, prefix=api_v1)

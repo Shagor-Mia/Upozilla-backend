@@ -10,10 +10,12 @@ from app.core.i18n import localized_value
 from app.core.pagination import PageParams
 from app.core.rbac import Permission
 from app.core.tenant import resolve_tenant_id
-from app.db.models import Market, ModerationEntityType, ModerationStatus, Shop, ShopCategory, ShopStatus
+import re
+
+from app.db.models import Location, Market, ModerationEntityType, ModerationStatus, Shop, ShopCategory, ShopStatus
 from app.modules.moderation import service as moderation_service
 from app.modules.sellers import service as sellers_service
-from app.modules.shops.schemas import ShopCreate, ShopResponse, ShopUpdate, to_response
+from app.modules.shops.schemas import ShopCategoryCreate, ShopCreate, ShopResponse, ShopUpdate, to_response
 
 CONTENT_FIELDS = {"name", "description", "images", "category_id"}
 
@@ -32,6 +34,30 @@ def list_categories(db: Session) -> list[ShopCategory]:
     return db.query(ShopCategory).order_by(ShopCategory.sort_order, ShopCategory.name_bn).all()
 
 
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or "category"
+
+
+def create_category(db: Session, payload: ShopCategoryCreate) -> ShopCategory:
+    """Any phone-verified user can add a category (product decision) - there is
+    no separate moderation step for the category itself, only for shops."""
+    base_slug = _slugify(payload.name_en or payload.name_bn)
+    slug = base_slug
+    suffix = 2
+    while db.query(ShopCategory.id).filter(ShopCategory.slug == slug).first() is not None:
+        slug = f"{base_slug}-{suffix}"
+        suffix += 1
+    max_sort_order = db.query(ShopCategory).count()
+    category = ShopCategory(
+        name_bn=payload.name_bn, name_en=payload.name_en, slug=slug, sort_order=max_sort_order
+    )
+    db.add(category)
+    db.commit()
+    db.refresh(category)
+    return category
+
+
 # --- response building ---------------------------------------------------------------
 
 
@@ -41,7 +67,7 @@ def to_responses(db: Session, shops: Iterable[Shop], locale: str) -> list[ShopRe
         return []
     market_names = {
         m.id: localized_value(m.name_bn, m.name_en, m.name_ar, locale)
-        for m in db.query(Market).filter(Market.id.in_({r.market_id for r in rows})).all()
+        for m in db.query(Market).filter(Market.id.in_({r.market_id for r in rows if r.market_id})).all()
     }
     category_names = {
         c.id: localized_value(c.name_bn, c.name_en, c.name_ar, locale) for c in db.query(ShopCategory).all()
@@ -55,7 +81,7 @@ def to_responses(db: Session, shops: Iterable[Shop], locale: str) -> list[ShopRe
         responses.append(
             to_response(
                 r,
-                market_name=market_names.get(r.market_id, ""),
+                market_name=market_names.get(r.market_id) if r.market_id else None,
                 category_name=category_names.get(r.category_id, ""),
                 locale=locale,
                 seller=sellers[r.seller_user_id],
@@ -133,21 +159,34 @@ def _get_market(db: Session, market_id: uuid.UUID) -> Market:
     return market
 
 
+def _get_location(db: Session, location_id: uuid.UUID) -> Location:
+    location = db.query(Location).filter(Location.id == location_id).first()
+    if location is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unknown location")
+    return location
+
+
 def _assert_category(db: Session, category_id: uuid.UUID) -> None:
     if db.query(ShopCategory.id).filter(ShopCategory.id == category_id).first() is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unknown category")
 
 
 def create(db: Session, seller: CurrentUser, payload: ShopCreate, background_tasks: BackgroundTasks) -> Shop:
-    market = _get_market(db, payload.market_id)
+    if payload.market_id is not None:
+        market = _get_market(db, payload.market_id)
+        location_id = market.location_id
+    elif payload.location_id is not None:
+        location_id = _get_location(db, payload.location_id).id
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="market_id or location_id is required")
     _assert_category(db, payload.category_id)
     tenant_id = resolve_tenant_id(db, seller)
 
     shop = Shop(
         tenant_id=tenant_id,
         seller_user_id=seller.uuid,
-        market_id=market.id,
-        location_id=market.location_id,
+        market_id=payload.market_id,
+        location_id=location_id,
         category_id=payload.category_id,
         name_bn=payload.name,
         description_bn=payload.description,

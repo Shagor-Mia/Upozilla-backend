@@ -1,9 +1,17 @@
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.core.i18n import localized_value
 from app.db.models.business import Business
+
+MAX_BUSINESS_IMAGES = 3
+
+
+def _check_max_images(images: list[str] | None) -> list[str] | None:
+    if images is not None and len(images) > MAX_BUSINESS_IMAGES:
+        raise ValueError(f"at most {MAX_BUSINESS_IMAGES} images are allowed")
+    return images
 
 
 class BusinessCreate(BaseModel):
@@ -18,10 +26,13 @@ class BusinessCreate(BaseModel):
     description_ar: str | None = None
     logo: str | None = None
     cover_image: str | None = None
+    images: list[str] | None = None
     phone: str | None = None
     address: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+
+    _check_images = field_validator("images")(_check_max_images)
 
 
 class BusinessUpdate(BaseModel):
@@ -36,11 +47,14 @@ class BusinessUpdate(BaseModel):
     description_ar: str | None = None
     logo: str | None = None
     cover_image: str | None = None
+    images: list[str] | None = None
     phone: str | None = None
     address: str | None = None
     latitude: float | None = None
     longitude: float | None = None
     status: str | None = None
+
+    _check_images = field_validator("images")(_check_max_images)
 
 
 class BusinessAdminResponse(BaseModel):
@@ -59,6 +73,7 @@ class BusinessAdminResponse(BaseModel):
     description_ar: str | None
     logo: str | None
     cover_image: str | None
+    images: list[str] | None
     phone: str | None
     address: str | None
     latitude: float | None
@@ -79,6 +94,7 @@ class BusinessResponse(BaseModel):
     description: str | None
     logo: str | None
     cover_image: str | None
+    images: list[str] | None
     phone: str | None
     address: str | None
     latitude: float | None
@@ -104,6 +120,7 @@ class BusinessResponse(BaseModel):
             else None,
             logo=business.logo,
             cover_image=business.cover_image,
+            images=business.images,
             phone=business.phone,
             address=business.address,
             latitude=business.latitude,

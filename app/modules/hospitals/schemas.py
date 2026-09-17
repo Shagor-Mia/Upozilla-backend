@@ -16,6 +16,9 @@ class HospitalCreate(BaseModel):
     contact: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    images: list[str] | None = None
+    services: list[str] | None = None
+    ambulance_contact: str | None = None
 
 
 class HospitalResponse(BaseModel):
@@ -27,6 +30,9 @@ class HospitalResponse(BaseModel):
     contact: str | None
     latitude: float | None
     longitude: float | None
+    images: list[str] | None
+    services: list[str] | None
+    ambulance_contact: str | None
     # Section 17 Phase 3: only set when the list was queried with ?lat=&lng=
     distance_km: float | None = None
 
@@ -41,6 +47,9 @@ class HospitalResponse(BaseModel):
             contact=hospital.contact,
             latitude=hospital.latitude,
             longitude=hospital.longitude,
+            images=hospital.images,
+            services=hospital.services,
+            ambulance_contact=hospital.ambulance_contact,
             distance_km=distance_km,
         )
 
@@ -55,6 +64,9 @@ class HospitalUpdate(BaseModel):
     contact: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    images: list[str] | None = None
+    services: list[str] | None = None
+    ambulance_contact: str | None = None
 
 
 class HospitalAdminResponse(BaseModel):
@@ -68,8 +80,28 @@ class HospitalAdminResponse(BaseModel):
     contact: str | None
     latitude: float | None
     longitude: float | None
+    images: list[str] | None
+    services: list[str] | None
+    ambulance_contact: str | None
+    owner_user_id: uuid.UUID | None
 
     model_config = {"from_attributes": True}
+
+
+class AmbulanceHospitalResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    ambulance_contact: str
+    address: str | None
+
+    @classmethod
+    def from_model(cls, hospital: Hospital, locale: str) -> "AmbulanceHospitalResponse":
+        return cls(
+            id=hospital.id,
+            name=localized_value(hospital.name_bn, hospital.name_en, hospital.name_ar, locale),
+            ambulance_contact=hospital.ambulance_contact,
+            address=hospital.address,
+        )
 
 
 class DoctorCreate(BaseModel):

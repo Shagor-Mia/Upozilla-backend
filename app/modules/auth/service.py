@@ -131,6 +131,8 @@ def issue_token_pair(db: Session, user: User) -> tuple[str, str]:
         role=user.role,
         roles=get_role_names(db, user),
         phone_verified=user.phone_verified_at is not None,
+        can_manage_hospital=user.can_manage_hospital,
+        can_manage_school=user.can_manage_school,
     )
     raw_refresh_token = secrets.token_urlsafe(48)
     db.add(

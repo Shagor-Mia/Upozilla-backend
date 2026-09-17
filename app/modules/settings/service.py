@@ -20,7 +20,7 @@ from app.modules.settings.schemas import (
 )
 
 
-DEFAULT_SITE_NAME = "Upazila Digital Ecosystem"
+DEFAULT_SITE_NAME = "Homna"
 
 
 def get_public_settings() -> PublicSettings:
@@ -34,6 +34,7 @@ def get_public_settings() -> PublicSettings:
         site_url=values.get("site_url") or "",
         site_description=values.get("site_description"),
         sms_demo_mode=(runtime_settings.get("sms_gateway") or "console") == "console",
+        otp_login_enabled=runtime_settings.get("otp_login_enabled") != "disabled",
         turnstile_site_key=values.get("turnstile_site_key"),
         facebook_app_id=values.get("facebook_app_id"),
         google_client_id=values.get("google_client_id"),

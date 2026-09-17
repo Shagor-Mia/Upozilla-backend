@@ -10,6 +10,7 @@ class PublicSettings(BaseModel):
     site_url: str
     site_description: str | None
     sms_demo_mode: bool
+    otp_login_enabled: bool
     turnstile_site_key: str | None
     facebook_app_id: str | None
     google_client_id: str | None

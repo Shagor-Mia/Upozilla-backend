@@ -68,6 +68,8 @@ def _to_admin_user(user: User, scoped: list[ScopedRoleResponse]) -> AdminUserRes
         role=user.role,
         status=user.status,
         phone_verified=user.phone_verified_at is not None,
+        can_manage_hospital=user.can_manage_hospital,
+        can_manage_school=user.can_manage_school,
         scoped_roles=scoped,
         created_at=user.created_at,
     )
@@ -116,6 +118,42 @@ def update_user_status(db: Session, actor: CurrentUser, user_id: uuid.UUID, new_
     db.commit()
     if new_status != "active":
         auth_service.revoke_all_refresh_tokens(db, user.id)
+    db.refresh(user)
+    return _serialize(db, user)
+
+
+def update_hospital_permission(db: Session, actor: CurrentUser, user_id: uuid.UUID, granted: bool) -> AdminUserResponse:
+    # Off-platform vetted (WhatsApp/call, Section 17 follow-up): admin flips this
+    # per-user flag so the grantee's POST /hospitals is accepted for the one
+    # hospital they own - see hospitals/service.py:create_hospital. The flag is
+    # also carried as a JWT claim (same convention as `role`), so force
+    # re-login the same way update_user_role does.
+    user = _get_user(db, user_id)
+    previous = user.can_manage_hospital
+    user.can_manage_hospital = granted
+    record_audit(
+        db, actor.uuid, "user.hospital_permission_changed", "user", user.id, {"from": previous, "to": granted}
+    )
+    db.commit()
+    auth_service.revoke_all_refresh_tokens(db, user.id)
+    db.refresh(user)
+    return _serialize(db, user)
+
+
+def update_school_permission(db: Session, actor: CurrentUser, user_id: uuid.UUID, granted: bool) -> AdminUserResponse:
+    # Off-platform vetted (WhatsApp/call, Section 17 follow-up): admin flips this
+    # per-user flag so the grantee's POST /schools is accepted for the one
+    # school they own - see schools/service.py:create_school. The flag is
+    # also carried as a JWT claim (same convention as `role`), so force
+    # re-login the same way update_user_role does.
+    user = _get_user(db, user_id)
+    previous = user.can_manage_school
+    user.can_manage_school = granted
+    record_audit(
+        db, actor.uuid, "user.school_permission_changed", "user", user.id, {"from": previous, "to": granted}
+    )
+    db.commit()
+    auth_service.revoke_all_refresh_tokens(db, user.id)
     db.refresh(user)
     return _serialize(db, user)
 

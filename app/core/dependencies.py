@@ -21,6 +21,8 @@ class CurrentUser:
         role: str | None,
         roles: list[str] | None = None,
         phone_verified: bool = False,
+        can_manage_hospital: bool = False,
+        can_manage_school: bool = False,
         expires_at: int | None = None,
     ):
         self.user_id = user_id
@@ -28,6 +30,11 @@ class CurrentUser:
         self.role = role
         self.roles = roles or ([role] if role else [])
         self.phone_verified = phone_verified
+        # UX hint only (same convention as phone_verified) - hospitals/service.py
+        # re-checks User.can_manage_hospital against the DB on every write.
+        self.can_manage_hospital = can_manage_hospital
+        # Same convention, for schools/service.py's User.can_manage_school check.
+        self.can_manage_school = can_manage_school
         self.expires_at = expires_at  # unix seconds, from the JWT `exp` claim
 
     @property
@@ -49,6 +56,8 @@ def _payload_to_user(payload: dict) -> CurrentUser:
         role=payload.get("role"),
         roles=payload.get("roles"),
         phone_verified=bool(payload.get("phone_verified", False)),
+        can_manage_hospital=bool(payload.get("can_manage_hospital", False)),
+        can_manage_school=bool(payload.get("can_manage_school", False)),
         expires_at=payload.get("exp"),
     )
 
