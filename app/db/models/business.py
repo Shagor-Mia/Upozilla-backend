@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, Float, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import ARRAY, Boolean, Float, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,6 +31,9 @@ class Business(Base, UUIDPKMixin, TenantMixin, TimestampMixin):
     description_ar: Mapped[str | None] = mapped_column(Text, nullable=True)
     logo: Mapped[str | None] = mapped_column(String(500), nullable=True)
     cover_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Up to 3 photos of the listing (Section 22.2 admin form) - enforced in
+    # BusinessCreate/BusinessUpdate, not at the DB level.
+    images: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)

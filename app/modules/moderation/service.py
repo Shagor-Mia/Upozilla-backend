@@ -31,6 +31,7 @@ from app.db.models import (
     ModerationQueue,
     ModerationQueueStatus,
     ModerationStatus,
+    Place,
     ReportStatus,
     RoleRow,
     Shop,
@@ -48,7 +49,7 @@ from app.modules.moderation.schemas import (
     QueueReportSnapshot,
 )
 
-Listing = ExchangeListing | MarketplaceProduct | Shop
+Listing = ExchangeListing | MarketplaceProduct | Shop | Place
 
 
 def _now() -> datetime:
@@ -122,6 +123,23 @@ def enqueue_report(db: Session, *, report: ListingReport, location_id: uuid.UUID
             entity_id=report.id,
             location_id=location_id,
             reason=f"report: {report.reason}",
+        )
+    )
+    db.flush()
+
+
+def enqueue_place(db: Session, *, place: Place, tenant_id: uuid.UUID | None) -> None:
+    """Sibling to `enqueue_listing`, but places never auto-approve on trust
+    score (product decision: user-submitted places always need a human
+    admin's eyes) - so this always queues pending, no trust lookup at all."""
+    place.moderation_status = ModerationStatus.PENDING.value
+    db.add(
+        ModerationQueue(
+            tenant_id=tenant_id,
+            entity_type=ModerationEntityType.PLACE.value,
+            entity_id=place.id,
+            location_id=place.location_id,
+            reason="new place submission",
         )
     )
     db.flush()
@@ -233,19 +251,34 @@ def _listing_snapshot_from(
         # Shops don't sell at a fixed price - the field exists only for the
         # generic moderation queue display, not a real shop attribute.
         listing_type, price, currency = ModerationEntityType.SHOP.value, 0.0, "BDT"
+    elif entity_type == ModerationEntityType.PLACE.value:
+        # Places have no price either - same placeholder as Shop above.
+        listing_type, price, currency = ModerationEntityType.PLACE.value, 0.0, "BDT"
     else:
         listing_type, price, currency = ListingType.MARKETPLACE.value, float(listing.price), listing.currency
+    if entity_type == ModerationEntityType.SHOP.value:
+        title = listing.name_bn
+        cover_image = (listing.images or [None])[0]
+        description = listing.description_bn
+    elif entity_type == ModerationEntityType.PLACE.value:
+        title = listing.name_bn
+        cover_image = listing.cover_image or (listing.gallery or [None])[0]
+        description = listing.description_bn
+    else:
+        title = listing.title_bn
+        cover_image = (listing.images or [None])[0]
+        description = listing.description_bn
     return QueueListingSnapshot(
         listing_type=listing_type,
-        title=listing.name_bn if entity_type == ModerationEntityType.SHOP.value else listing.title_bn,
+        title=title,
         price=price,
         currency=currency,
         status=listing.status,
         moderation_status=listing.moderation_status,
         seller_user_id=listing.seller_user_id,
         seller_name=seller_names.get(listing.seller_user_id, ""),
-        cover_image=(listing.images or [None])[0],
-        description=listing.description_bn,
+        cover_image=cover_image,
+        description=description,
     )
 
 
@@ -282,6 +315,7 @@ def _find_listing(db: Session, listing_type: str, listing_id: uuid.UUID) -> List
 _ENTITY_MODEL = {
     ModerationEntityType.EXCHANGE_LISTING.value: ExchangeListing,
     ModerationEntityType.SHOP.value: Shop,
+    ModerationEntityType.PLACE.value: Place,
 }
 
 
@@ -356,11 +390,13 @@ def list_queue(
     exchange_ids = {r.entity_id for r in rows if r.entity_type == ModerationEntityType.EXCHANGE_LISTING.value}
     marketplace_ids = {r.entity_id for r in rows if r.entity_type == ModerationEntityType.MARKETPLACE_PRODUCT.value}
     shop_ids = {r.entity_id for r in rows if r.entity_type == ModerationEntityType.SHOP.value}
+    place_ids = {r.entity_id for r in rows if r.entity_type == ModerationEntityType.PLACE.value}
     report_ids = {r.entity_id for r in rows if r.entity_type == ModerationEntityType.LISTING_REPORT.value}
 
     exchange_by_id = _index_by_id(db, ExchangeListing, exchange_ids)
     marketplace_by_id = _index_by_id(db, MarketplaceProduct, marketplace_ids)
     shop_by_id = _index_by_id(db, Shop, shop_ids)
+    place_by_id = _index_by_id(db, Place, place_ids)
     reports_by_id = _index_by_id(db, ListingReport, report_ids)
 
     # Reports point at a listing of their own - batch those in too, extending
@@ -376,7 +412,8 @@ def list_queue(
     marketplace_by_id.update(_index_by_id(db, MarketplaceProduct, report_marketplace_ids))
 
     seller_ids = {
-        listing.seller_user_id for listing in (*exchange_by_id.values(), *marketplace_by_id.values(), *shop_by_id.values())
+        listing.seller_user_id
+        for listing in (*exchange_by_id.values(), *marketplace_by_id.values(), *shop_by_id.values(), *place_by_id.values())
     }
     reporter_ids = {r.reporter_user_id for r in reports_by_id.values()}
     user_names = _index_names(db, seller_ids | reporter_ids)
@@ -404,6 +441,8 @@ def list_queue(
             item.listing = _listing_snapshot_from(row.entity_type, exchange_by_id.get(row.entity_id), user_names)
         elif row.entity_type == ModerationEntityType.SHOP.value:
             item.listing = _listing_snapshot_from(row.entity_type, shop_by_id.get(row.entity_id), user_names)
+        elif row.entity_type == ModerationEntityType.PLACE.value:
+            item.listing = _listing_snapshot_from(row.entity_type, place_by_id.get(row.entity_id), user_names)
         else:
             item.listing = _listing_snapshot_from(row.entity_type, marketplace_by_id.get(row.entity_id), user_names)
         items.append(item)
@@ -533,6 +572,14 @@ def _apply_contract_dispute_decision(
 def _apply_listing_decision(db: Session, entity_type: str, entity_id: uuid.UUID, approved: bool) -> uuid.UUID | None:
     if entity_type == ModerationEntityType.SHOP.value:
         listing = db.query(Shop).filter(Shop.id == entity_id).first()
+    elif entity_type == ModerationEntityType.PLACE.value:
+        place = db.query(Place).filter(Place.id == entity_id).first()
+        if place is None:
+            return None
+        place.moderation_status = ModerationStatus.APPROVED.value if approved else ModerationStatus.REJECTED.value
+        # No trust-score integration for places (product decision) - always
+        # return None here so `review()` skips the recompute call below.
+        return None
     else:
         listing = _find_listing(
             db,

@@ -31,8 +31,11 @@ class ShopCategory(Base, UUIDPKMixin, TimestampMixin):
 class Shop(Base, UUIDPKMixin, TenantMixin, TimestampMixin):
     __tablename__ = "shops"
 
-    market_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("markets.id"), nullable=False, index=True
+    # Nullable: a shop no longer has to belong to a specific market/bazaar -
+    # an owner can list it as a standalone shop anywhere in the upazila,
+    # supplying `location_id` directly instead of inheriting it from a market.
+    market_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("markets.id"), nullable=True, index=True
     )
     # Named to match ExchangeListing/MarketplaceProduct's "listing owner" convention
     # (app/modules/moderation/service.py's generic enqueue_listing()/reenqueue_after_edit()

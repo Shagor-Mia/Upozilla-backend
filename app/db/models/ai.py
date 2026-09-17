@@ -18,6 +18,7 @@ class KnowledgeSourceType(str, enum.Enum):
     PLACE = "place"
     SERVICE = "service"
     HOSPITAL = "hospital"
+    SCHOOL = "school"
     MARKET = "market"
     NEWS = "news"
     FAQ = "faq"

@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import BackgroundTasks, Request
+from fastapi import BackgroundTasks, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core import embeddings, translation
@@ -8,6 +8,7 @@ from app.core.content_scope import assert_tenant_match, tenant_scoped
 from app.core.dependencies import CurrentUser
 from app.core.geo import NearParams, apply_near_paginated
 from app.core.pagination import PageParams
+from app.core.rbac import Permission
 from app.core.tenant import resolve_tenant_id
 from app.db.models.ai import KnowledgeSourceType
 
@@ -23,10 +24,20 @@ def _schedule_reindex(background_tasks: BackgroundTasks, hospital: Hospital) -> 
     )
 
 
+def _assert_can_manage(hospital: Hospital, actor: CurrentUser) -> None:
+    """A hospital-manager (Permission.CONTENT_MANAGE absent) may only touch the
+    one hospital they own; staff with CONTENT_MANAGE can touch any of them."""
+    if actor.has_permission(Permission.CONTENT_MANAGE):
+        return
+    if not actor.can_manage_hospital or hospital.owner_user_id != actor.uuid:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="insufficient permissions")
+
+
 def update_hospital(
     db: Session, hospital_id, payload: HospitalUpdate, background_tasks: BackgroundTasks, actor: CurrentUser
 ) -> Hospital:
     hospital = get_hospital(db, hospital_id, actor)
+    _assert_can_manage(hospital, actor)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(hospital, field, value)
     db.commit()
@@ -62,13 +73,31 @@ def get_hospital(
 def create_hospital(
     db: Session, payload: HospitalCreate, background_tasks: BackgroundTasks, actor: CurrentUser
 ) -> Hospital:
-    hospital = Hospital(tenant_id=resolve_tenant_id(db, actor), **payload.model_dump())
+    owner_user_id = None
+    if not actor.has_permission(Permission.CONTENT_MANAGE):
+        if not actor.can_manage_hospital:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="insufficient permissions")
+        already_owns = db.query(Hospital).filter(Hospital.owner_user_id == actor.uuid).first()
+        if already_owns is not None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="you already manage a hospital")
+        owner_user_id = actor.uuid
+
+    hospital = Hospital(tenant_id=resolve_tenant_id(db, actor), owner_user_id=owner_user_id, **payload.model_dump())
     db.add(hospital)
     db.commit()
     db.refresh(hospital)
     translation.schedule_translations(background_tasks, Hospital, hospital.id, ["name"])
     _schedule_reindex(background_tasks, hospital)
     return hospital
+
+
+def list_ambulance_hospitals(db: Session, *, request: Request | None = None) -> list[Hospital]:
+    query = tenant_scoped(db.query(Hospital), Hospital, db, request=request)
+    return query.filter(Hospital.ambulance_contact.isnot(None)).order_by(Hospital.name_bn).all()
+
+
+def get_my_hospital(db: Session, actor: CurrentUser) -> Hospital | None:
+    return db.query(Hospital).filter(Hospital.owner_user_id == actor.uuid).first()
 
 
 def list_doctors(db: Session, hospital_id: uuid.UUID, *, request: Request | None = None) -> list[Doctor]:
@@ -82,7 +111,8 @@ def create_doctor(db: Session, payload: DoctorCreate, actor: CurrentUser) -> Doc
     # Verifies the hospital exists and belongs to the actor's tenant before
     # attaching a doctor to it - previously accepted any hospital_id with no
     # existence check at all.
-    get_hospital(db, payload.hospital_id, actor)
+    hospital = get_hospital(db, payload.hospital_id, actor)
+    _assert_can_manage(hospital, actor)
     doctor = Doctor(**payload.model_dump())
     db.add(doctor)
     db.commit()

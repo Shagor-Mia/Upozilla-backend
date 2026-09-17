@@ -33,6 +33,12 @@ PLACEHOLDER_COORDS = {
     "Homna Weekly Cattle Haat": (23.6950, 90.7700),
     "sample-general-store": (23.6820, 90.7860),
     "sample-tailoring-shop": (23.6875, 90.7790),
+    "brac-bank": (23.6845, 90.7838),
+    "sonali-bank": (23.6828, 90.7845),
+    "krishi-bank": (23.6852, 90.7820),
+    "dutch-bangla-bank": (23.6818, 90.7828),
+    "social-islami-bank": (23.6840, 90.7850),
+    "islami-bank": (23.6825, 90.7815),
 }
 
 
@@ -105,13 +111,30 @@ def _seed_markets(db, location_id) -> int:
     return created
 
 
+#  "Popular Seba" nav dropdown (SiteHeader.tsx) links to /business?category=bank -
+# these are name-only placeholders (branch address, phone, and photos are all
+# invented) so admins have real rows to open and fill in via /admin, not
+# researched Homna branch facts.
+BANK_TEMPLATES = [
+    ("BRAC Bank", "brac-bank"),
+    ("Sonali Bank", "sonali-bank"),
+    ("Bangladesh Krishi Bank", "krishi-bank"),
+    ("Dutch-Bangla Bank", "dutch-bangla-bank"),
+    ("Social Islami Bank", "social-islami-bank"),
+    ("Islami Bank Bangladesh", "islami-bank"),
+]
+
+
 def _seed_businesses(db, location_id, owner_user_id) -> int:
     templates = [
-        ("Sample General Store", "grocery", "sample-general-store"),
-        ("Sample Tailoring Shop", "tailoring", "sample-tailoring-shop"),
+        ("Sample General Store", "grocery", "sample-general-store", None, None),
+        ("Sample Tailoring Shop", "tailoring", "sample-tailoring-shop", None, None),
+    ] + [
+        (name, "bank", slug, "Homna Sadar, Homna Upazila, Cumilla", "01700-000000")
+        for name, slug in BANK_TEMPLATES
     ]
     created = 0
-    for name, category, slug in templates:
+    for name, category, slug, address, phone in templates:
         if db.query(Business).filter(Business.slug == slug).first():
             continue
         db.add(
@@ -124,6 +147,8 @@ def _seed_businesses(db, location_id, owner_user_id) -> int:
                 category=category,
                 description_bn=f"{PLACEHOLDER_MARKER} Example business listing — replace with a real, owner-submitted or admin-verified listing.",
                 description_en=f"{PLACEHOLDER_MARKER} Example business listing — replace with a real, owner-submitted or admin-verified listing.",
+                address=address,
+                phone=phone,
                 latitude=PLACEHOLDER_COORDS[slug][0],
                 longitude=PLACEHOLDER_COORDS[slug][1],
                 status="active",

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app.core import runtime_settings
 from app.core.database import get_db
 from app.core.dependencies import CurrentUser, get_client_ip, get_current_user, get_optional_user
 from app.core.rate_limit import rate_limit_by_ip
@@ -73,6 +74,13 @@ def me(current_user: CurrentUser = Depends(get_current_user), db: Session = Depe
 # --- Phone OTP (Section 10) ------------------------------------------------------
 
 
+def _require_otp_login_enabled(purpose: OtpPurpose) -> None:
+    """Admin-editable kill switch (Section 16 settings): OTP registration and
+    phone verification stay on regardless, only the login purpose is gated."""
+    if purpose is OtpPurpose.LOGIN and runtime_settings.get("otp_login_enabled") == "disabled":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="OTP login is currently disabled")
+
+
 @router.post("/otp/request", response_model=OtpRequestResponse)
 def request_otp(
     payload: OtpRequestBody,
@@ -80,6 +88,7 @@ def request_otp(
     db: Session = Depends(get_db),
     current_user: CurrentUser | None = Depends(get_optional_user),
 ) -> OtpRequestResponse:
+    _require_otp_login_enabled(payload.purpose)
     if payload.purpose is OtpPurpose.VERIFY_PHONE and current_user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="sign in before verifying a phone number")
 
@@ -103,6 +112,7 @@ def verify_otp(
     """Verifies the code, then issues our own JWT pair (Section 10). For
     `verify_phone` the caller must already be signed in; the fresh token pair
     carries the updated `phone_verified` claim."""
+    _require_otp_login_enabled(payload.purpose)
     if payload.purpose is OtpPurpose.REGISTER and not payload.full_name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="full_name is required to register")
     if payload.purpose is OtpPurpose.VERIFY_PHONE and current_user is None:

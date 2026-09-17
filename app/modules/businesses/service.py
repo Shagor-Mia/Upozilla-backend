@@ -39,6 +39,7 @@ MAX_BUSINESSES_LISTED = 500
 def list_businesses(
     db: Session,
     location_id: uuid.UUID | None = None,
+    category: str | None = None,
     near: NearParams | None = None,
     *,
     request: Request | None = None,
@@ -46,6 +47,8 @@ def list_businesses(
     query = tenant_scoped(db.query(Business).filter(Business.status == "active"), Business, db, request=request)
     if location_id is not None:
         query = query.filter(Business.location_id == location_id)
+    if category is not None:
+        query = query.filter(Business.category == category)
     query = query.order_by(Business.name_bn).limit(MAX_BUSINESSES_LISTED)
     return apply_near(query, Business, near or NearParams())
 

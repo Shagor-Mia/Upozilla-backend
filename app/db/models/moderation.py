@@ -17,6 +17,7 @@ class ModerationEntityType(str, enum.Enum):
     LISTING_REPORT = "listing_report"
     SHOP = "shop"
     CONTRACT_DISPUTE = "contract_dispute"
+    PLACE = "place"
 
 
 class ModerationQueueStatus(str, enum.Enum):

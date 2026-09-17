@@ -31,6 +31,14 @@ class ScopedRoleResponse(BaseModel):
     scope_location_name: str | None
 
 
+class HospitalPermissionUpdate(BaseModel):
+    granted: bool
+
+
+class SchoolPermissionUpdate(BaseModel):
+    granted: bool
+
+
 class AdminUserResponse(BaseModel):
     id: uuid.UUID
     full_name: str
@@ -39,6 +47,8 @@ class AdminUserResponse(BaseModel):
     role: str
     status: str
     phone_verified: bool
+    can_manage_hospital: bool
+    can_manage_school: bool
     scoped_roles: list[ScopedRoleResponse]
     created_at: datetime
 

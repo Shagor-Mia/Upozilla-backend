@@ -37,7 +37,7 @@ DEFINITIONS: tuple[SettingDefinition, ...] = (
     SettingDefinition(
         "site_name", "Site name", "general", is_public=True,
         help="Shown in page titles, the browser tab, and shared-link previews. Defaults to "
-             "\"Upazila Digital Ecosystem\" if left blank.",
+             "\"Homna\" if left blank.",
     ),
     SettingDefinition(
         "site_url", "Site URL", "general", is_public=True,
@@ -53,6 +53,13 @@ DEFINITIONS: tuple[SettingDefinition, ...] = (
     SettingDefinition(
         "sms_gateway", "SMS gateway", "sms", env_attr="SMS_GATEWAY", kind="select", options=("console", "http"),
         help="console = no SMS is sent, the OTP code is shown on screen (demo mode). http = real gateway below.",
+    ),
+    SettingDefinition(
+        "otp_login_enabled", "Mobile OTP login", "auth", is_public=True, kind="select",
+        options=("enabled", "disabled"),
+        help="enabled = users can sign in with a phone OTP code. disabled = the OTP tab is hidden and "
+             "/auth/otp/request and /auth/otp/verify reject purpose=login; password/Google/Facebook login "
+             "and OTP registration/phone-verification are unaffected.",
     ),
     SettingDefinition("sms_http_url", "Gateway URL", "sms", env_attr="SMS_HTTP_URL", help="JSON POST endpoint of the SMS provider."),
     SettingDefinition("sms_http_api_key", "Gateway API key", "sms", env_attr="SMS_HTTP_API_KEY", is_secret=True),

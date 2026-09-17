@@ -12,7 +12,9 @@ from app.modules.admin.schemas import (
     AuditLogResponse,
     BusinessVerificationUpdate,
     DashboardCounts,
+    HospitalPermissionUpdate,
     RoleDefinition,
+    SchoolPermissionUpdate,
     ScopedRoleCreate,
     UserRoleUpdate,
     UserStatusUpdate,
@@ -49,6 +51,26 @@ def update_user_status(
     actor: CurrentUser = Depends(users_manage),
 ) -> AdminUserResponse:
     return service.update_user_status(db, actor, user_id, payload.status)
+
+
+@router.patch("/users/{user_id}/hospital-permission", response_model=AdminUserResponse)
+def update_hospital_permission(
+    user_id: uuid.UUID,
+    payload: HospitalPermissionUpdate,
+    db: Session = Depends(get_db),
+    actor: CurrentUser = Depends(users_manage),
+) -> AdminUserResponse:
+    return service.update_hospital_permission(db, actor, user_id, payload.granted)
+
+
+@router.patch("/users/{user_id}/school-permission", response_model=AdminUserResponse)
+def update_school_permission(
+    user_id: uuid.UUID,
+    payload: SchoolPermissionUpdate,
+    db: Session = Depends(get_db),
+    actor: CurrentUser = Depends(users_manage),
+) -> AdminUserResponse:
+    return service.update_school_permission(db, actor, user_id, payload.granted)
 
 
 @router.post("/users/{user_id}/roles", response_model=AdminUserResponse, status_code=201)

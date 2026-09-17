@@ -17,7 +17,14 @@ from app.core.pagination import PageParams, Paginated
 from app.core.rate_limit import rate_limit_by_user
 from app.core.rbac import Permission
 from app.modules.shops import service
-from app.modules.shops.schemas import ShopAdminResponse, ShopCategoryResponse, ShopCreate, ShopResponse, ShopUpdate
+from app.modules.shops.schemas import (
+    ShopAdminResponse,
+    ShopCategoryCreate,
+    ShopCategoryResponse,
+    ShopCreate,
+    ShopResponse,
+    ShopUpdate,
+)
 
 router = APIRouter(prefix="/shops", tags=["shops"])
 
@@ -25,6 +32,23 @@ router = APIRouter(prefix="/shops", tags=["shops"])
 @router.get("/categories", response_model=list[ShopCategoryResponse])
 def list_categories(locale: str = Depends(get_locale), db: Session = Depends(get_db)) -> list[ShopCategoryResponse]:
     return [ShopCategoryResponse.from_model(c, locale) for c in service.list_categories(db)]
+
+
+@router.post(
+    "/categories",
+    response_model=ShopCategoryResponse,
+    status_code=201,
+    dependencies=[Depends(rate_limit_by_user("shop-category-create", 10, 86400))],
+)
+def create_category(
+    payload: ShopCategoryCreate,
+    locale: str = Depends(get_locale),
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_phone_verified),
+) -> ShopCategoryResponse:
+    """Any phone-verified user can add a new category when listing a shop -
+    there is no admin gate on the category itself, only on individual shops."""
+    return ShopCategoryResponse.from_model(service.create_category(db, payload), locale)
 
 
 @router.get("", response_model=Paginated[ShopResponse])

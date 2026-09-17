@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,6 +23,15 @@ class User(Base, UUIDPKMixin, TenantMixin, TimestampMixin):
     # Facebook Login (Section 16) — additional identity path, not an auth replacement.
     oauth_provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
     oauth_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Admin-granted, off-platform vetted (Section 17 follow-up): lets this
+    # user create/manage the one hospital they own via POST/PATCH /hospitals,
+    # without needing the staff-only CONTENT_MANAGE permission.
+    can_manage_hospital: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Same convention as can_manage_hospital, for the one school they own via
+    # POST/PATCH /schools.
+    can_manage_school: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class RefreshToken(Base, UUIDPKMixin, TimestampMixin):

@@ -31,10 +31,13 @@ def create_access_token(
     role: str | None = None,
     roles: list[str] | None = None,
     phone_verified: bool = False,
+    can_manage_hospital: bool = False,
+    can_manage_school: bool = False,
 ) -> str:
     """`role` is the user's primary role (Phase 1 claim, kept for compatibility);
     `roles` adds any scoped `user_roles` assignments (Section 5.12). The
-    `phone_verified` claim is a UX hint only - the write-gate re-checks the DB."""
+    `phone_verified`/`can_manage_hospital`/`can_manage_school` claims are UX
+    hints only - the write-gates re-check the DB."""
     return _create_token(
         subject=user_id,
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
@@ -44,6 +47,8 @@ def create_access_token(
             "role": role,
             "roles": roles or ([role] if role else []),
             "phone_verified": phone_verified,
+            "can_manage_hospital": can_manage_hospital,
+            "can_manage_school": can_manage_school,
         },
     )
 
