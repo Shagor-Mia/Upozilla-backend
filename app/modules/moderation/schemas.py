@@ -46,6 +46,18 @@ class QueueReportSnapshot(BaseModel):
     listing_status: str | None
 
 
+class QueueContractSnapshot(BaseModel):
+    contract_id: uuid.UUID
+    title: str
+    employer_name: str | None
+    worker_name: str | None
+    payment_amount: float
+    currency: str
+    problem_category: str
+    problem_description: str
+    problem_images: list[str]
+
+
 class ModerationQueueItem(BaseModel):
     id: uuid.UUID
     entity_type: ModerationEntityType
@@ -60,6 +72,7 @@ class ModerationQueueItem(BaseModel):
     review_note: str | None
     listing: QueueListingSnapshot | None = None
     report: QueueReportSnapshot | None = None
+    contract: QueueContractSnapshot | None = None
 
 
 class ModerationStats(BaseModel):
