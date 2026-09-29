@@ -45,6 +45,7 @@ from app.modules.moderation.schemas import (
     ModerationDecision,
     ModerationQueueItem,
     ModerationStats,
+    QueueContractSnapshot,
     QueueListingSnapshot,
     QueueReportSnapshot,
 )
@@ -306,6 +307,29 @@ def _report_snapshot_from(
     )
 
 
+def _contract_snapshot_from(
+    problem: ContractProblem | None,
+    contract_by_id: dict[uuid.UUID, WorkContract],
+    user_names: dict[uuid.UUID, str],
+) -> QueueContractSnapshot | None:
+    if problem is None:
+        return None
+    contract = contract_by_id.get(problem.contract_id)
+    if contract is None:
+        return None
+    return QueueContractSnapshot(
+        contract_id=contract.id,
+        title=contract.title_bn,
+        employer_name=user_names.get(contract.employer_user_id) if contract.employer_user_id else None,
+        worker_name=user_names.get(contract.worker_user_id) if contract.worker_user_id else None,
+        payment_amount=float(contract.payment_amount),
+        currency=contract.currency,
+        problem_category=problem.category,
+        problem_description=problem.description_bn,
+        problem_images=problem.images or [],
+    )
+
+
 def _find_listing(db: Session, listing_type: str, listing_id: uuid.UUID) -> Listing | None:
     if listing_type == ListingType.EXCHANGE.value:
         return db.query(ExchangeListing).filter(ExchangeListing.id == listing_id).first()
@@ -350,6 +374,18 @@ def _to_item(db: Session, row: ModerationQueue) -> ModerationQueueItem:
         elif report:
             marketplace_by_id = _index_by_id(db, MarketplaceProduct, {report.listing_id})
         item.report = _report_snapshot_from(report, reporter_names, exchange_by_id, marketplace_by_id)
+    elif row.entity_type == ModerationEntityType.CONTRACT_DISPUTE.value:
+        problem = db.query(ContractProblem).filter(ContractProblem.id == row.entity_id).first()
+        contract_by_id: dict[uuid.UUID, WorkContract] = {}
+        user_names: dict[uuid.UUID, str] = {}
+        if problem is not None:
+            contract_by_id = _index_by_id(db, WorkContract, {problem.contract_id})
+            contract = contract_by_id.get(problem.contract_id)
+            if contract is not None:
+                user_names = _index_names(
+                    db, {uid for uid in (contract.employer_user_id, contract.worker_user_id) if uid is not None}
+                )
+        item.contract = _contract_snapshot_from(problem, contract_by_id, user_names)
     else:
         model = _ENTITY_MODEL.get(row.entity_type, MarketplaceProduct)
         listing = db.query(model).filter(model.id == row.entity_id).first()
@@ -392,12 +428,16 @@ def list_queue(
     shop_ids = {r.entity_id for r in rows if r.entity_type == ModerationEntityType.SHOP.value}
     place_ids = {r.entity_id for r in rows if r.entity_type == ModerationEntityType.PLACE.value}
     report_ids = {r.entity_id for r in rows if r.entity_type == ModerationEntityType.LISTING_REPORT.value}
+    contract_problem_ids = {r.entity_id for r in rows if r.entity_type == ModerationEntityType.CONTRACT_DISPUTE.value}
 
     exchange_by_id = _index_by_id(db, ExchangeListing, exchange_ids)
     marketplace_by_id = _index_by_id(db, MarketplaceProduct, marketplace_ids)
     shop_by_id = _index_by_id(db, Shop, shop_ids)
     place_by_id = _index_by_id(db, Place, place_ids)
     reports_by_id = _index_by_id(db, ListingReport, report_ids)
+    problems_by_id = _index_by_id(db, ContractProblem, contract_problem_ids)
+    contract_ids = {problem.contract_id for problem in problems_by_id.values()}
+    contract_by_id = _index_by_id(db, WorkContract, contract_ids)
 
     # Reports point at a listing of their own - batch those in too, extending
     # the same dicts so a listing referenced both directly and via a report
@@ -416,7 +456,13 @@ def list_queue(
         for listing in (*exchange_by_id.values(), *marketplace_by_id.values(), *shop_by_id.values(), *place_by_id.values())
     }
     reporter_ids = {r.reporter_user_id for r in reports_by_id.values()}
-    user_names = _index_names(db, seller_ids | reporter_ids)
+    contract_party_ids = {
+        uid
+        for contract in contract_by_id.values()
+        for uid in (contract.employer_user_id, contract.worker_user_id)
+        if uid is not None
+    }
+    user_names = _index_names(db, seller_ids | reporter_ids | contract_party_ids)
 
     items = []
     for row in rows:
@@ -443,6 +489,8 @@ def list_queue(
             item.listing = _listing_snapshot_from(row.entity_type, shop_by_id.get(row.entity_id), user_names)
         elif row.entity_type == ModerationEntityType.PLACE.value:
             item.listing = _listing_snapshot_from(row.entity_type, place_by_id.get(row.entity_id), user_names)
+        elif row.entity_type == ModerationEntityType.CONTRACT_DISPUTE.value:
+            item.contract = _contract_snapshot_from(problems_by_id.get(row.entity_id), contract_by_id, user_names)
         else:
             item.listing = _listing_snapshot_from(row.entity_type, marketplace_by_id.get(row.entity_id), user_names)
         items.append(item)
