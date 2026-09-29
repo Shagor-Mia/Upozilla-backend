@@ -25,7 +25,13 @@ class School(Base, UUIDPKMixin, TenantMixin, TimestampMixin):
     name_bn: Mapped[str] = mapped_column(String(255), nullable=False)
     name_en: Mapped[str | None] = mapped_column(String(255), nullable=True)
     name_ar: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    type: Mapped[SchoolType] = mapped_column(Enum(SchoolType, name="school_type"), nullable=False)
+    # values_callable: the DB enum's labels are lowercase ("govt", not "GOVT")
+    # - without it SQLAlchemy binds on the Python member NAME by default and
+    # every insert 500s with "invalid input value for enum school_type".
+    type: Mapped[SchoolType] = mapped_column(
+        Enum(SchoolType, name="school_type", values_callable=lambda enum_cls: [e.value for e in enum_cls]),
+        nullable=False,
+    )
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
     contact: Mapped[str | None] = mapped_column(String(100), nullable=True)
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)

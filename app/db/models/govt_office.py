@@ -26,8 +26,18 @@ class GovtOffice(Base, UUIDPKMixin, TenantMixin, TimestampMixin):
     location_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("locations.id"), nullable=False, index=True
     )
+    # values_callable: the DB enum's labels are lowercase ("other", not
+    # "OTHER") - without it SQLAlchemy binds on the Python member NAME by
+    # default and every insert 500s with "invalid input value for enum
+    # govt_office_category".
     category: Mapped[GovtOfficeCategory] = mapped_column(
-        Enum(GovtOfficeCategory, name="govt_office_category"), nullable=False, index=True
+        Enum(
+            GovtOfficeCategory,
+            name="govt_office_category",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        ),
+        nullable=False,
+        index=True,
     )
     name_bn: Mapped[str] = mapped_column(String(255), nullable=False)
     name_en: Mapped[str | None] = mapped_column(String(255), nullable=True)
