@@ -1,18 +1,26 @@
 import uuid
 
-from fastapi import BackgroundTasks, Request
+from fastapi import BackgroundTasks, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core import embeddings, translation
 from app.core.content_scope import assert_tenant_match, tenant_scoped
 from app.core.dependencies import CurrentUser
 from app.core.geo import NearParams, apply_near_paginated
+from app.core.location_scope import assert_location_in_tenant
 from app.core.pagination import PageParams
 from app.core.tenant import resolve_tenant_id
 from app.db.models.ai import KnowledgeSourceType
+from app.db.models.location import Location
 
 from app.db.models.market import Market
 from app.modules.markets.schemas import MarketCreate, MarketUpdate
+
+
+def _assert_location(db: Session, location_id: uuid.UUID, tenant_id: uuid.UUID | None) -> None:
+    if db.query(Location.id).filter(Location.id == location_id).first() is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unknown location")
+    assert_location_in_tenant(db, location_id, tenant_id)
 
 
 def _schedule_reindex(background_tasks: BackgroundTasks, market: Market) -> None:
@@ -26,7 +34,10 @@ def update_market(
     db: Session, market_id, payload: MarketUpdate, background_tasks: BackgroundTasks, actor: CurrentUser
 ) -> Market:
     market = get_market(db, market_id, actor)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    if "location_id" in changes and changes["location_id"] is not None:
+        _assert_location(db, changes["location_id"], market.tenant_id or resolve_tenant_id(db, actor))
+    for field, value in changes.items():
         setattr(market, field, value)
     db.commit()
     db.refresh(market)
@@ -63,7 +74,9 @@ def get_market(
 def create_market(
     db: Session, payload: MarketCreate, background_tasks: BackgroundTasks, actor: CurrentUser
 ) -> Market:
-    market = Market(tenant_id=resolve_tenant_id(db, actor), **payload.model_dump())
+    tenant_id = resolve_tenant_id(db, actor)
+    _assert_location(db, payload.location_id, tenant_id)
+    market = Market(tenant_id=tenant_id, **payload.model_dump())
     db.add(market)
     db.commit()
     db.refresh(market)

@@ -1,13 +1,15 @@
 import uuid
 from collections.abc import Iterable
 
-from fastapi import BackgroundTasks, HTTPException, status
+from fastapi import BackgroundTasks, HTTPException, Request, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Query, Session
 
 from app.core import translation
+from app.core.content_scope import assert_tenant_match, tenant_scoped
 from app.core.dependencies import CurrentUser
 from app.core.i18n import localized_value
+from app.core.location_scope import assert_location_in_tenant
 from app.core.pagination import PageParams
 from app.core.rbac import Permission
 from app.core.tenant import resolve_tenant_id
@@ -134,8 +136,12 @@ def list_public(
     max_price: float | None,
     sort: ListingSort,
     page: PageParams,
+    viewer: CurrentUser | None = None,
+    request: Request | None = None,
 ) -> tuple[list[MarketplaceProduct], int]:
-    query = _public_filter(db.query(MarketplaceProduct))
+    query = tenant_scoped(
+        _public_filter(db.query(MarketplaceProduct)), MarketplaceProduct, db, actor=viewer, request=request
+    )
     if category_id is not None:
         query = query.filter(MarketplaceProduct.category_id == category_id)
     if location_id is not None:
@@ -171,18 +177,22 @@ def list_public(
     return query.offset(page.offset).limit(page.page_size).all(), total
 
 
-def get_by_ids_public(db: Session, ids: list[uuid.UUID]) -> list[MarketplaceProduct]:
+def get_by_ids_public(
+    db: Session, ids: list[uuid.UUID], *, viewer: CurrentUser | None = None, request: Request | None = None
+) -> list[MarketplaceProduct]:
     if not ids:
         return []
-    rows = _public_filter(db.query(MarketplaceProduct)).filter(MarketplaceProduct.id.in_(ids)).all()
+    query = tenant_scoped(_public_filter(db.query(MarketplaceProduct)), MarketplaceProduct, db, actor=viewer, request=request)
+    rows = query.filter(MarketplaceProduct.id.in_(ids)).all()
     order = {product_id: index for index, product_id in enumerate(ids)}
     return sorted(rows, key=lambda r: order[r.id])
 
 
-def get_one(db: Session, product_id: uuid.UUID, viewer: CurrentUser | None) -> MarketplaceProduct:
+def get_one(
+    db: Session, product_id: uuid.UUID, viewer: CurrentUser | None, *, request: Request | None = None
+) -> MarketplaceProduct:
     product = db.query(MarketplaceProduct).filter(MarketplaceProduct.id == product_id).first()
-    if product is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="product not found")
+    assert_tenant_match(product, db, actor=viewer, request=request, detail="product not found")
     is_owner = viewer is not None and product.seller_user_id == viewer.uuid
     can_moderate = viewer is not None and viewer.has_permission(Permission.MARKETPLACE_MODERATE)
     visible = (
@@ -219,9 +229,10 @@ def _assert_category(db: Session, category_id: uuid.UUID) -> None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unknown category")
 
 
-def _assert_location(db: Session, location_id: uuid.UUID) -> None:
+def _assert_location(db: Session, location_id: uuid.UUID, tenant_id: uuid.UUID | None) -> None:
     if db.query(Location.id).filter(Location.id == location_id).first() is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unknown location")
+    assert_location_in_tenant(db, location_id, tenant_id)
 
 
 def _assert_business_owned(db: Session, business_id: uuid.UUID | None, seller: CurrentUser) -> None:
@@ -237,10 +248,10 @@ def _assert_business_owned(db: Session, business_id: uuid.UUID | None, seller: C
 def create(
     db: Session, seller: CurrentUser, payload: ProductCreate, background_tasks: BackgroundTasks
 ) -> MarketplaceProduct:
-    _assert_category(db, payload.category_id)
-    _assert_location(db, payload.location_id)
-    _assert_business_owned(db, payload.business_id, seller)
     tenant_id = resolve_tenant_id(db, seller)
+    _assert_category(db, payload.category_id)
+    _assert_location(db, payload.location_id, tenant_id)
+    _assert_business_owned(db, payload.business_id, seller)
 
     product = MarketplaceProduct(
         tenant_id=tenant_id,
@@ -280,7 +291,7 @@ def update(db: Session, actor: CurrentUser, product_id: uuid.UUID, payload: Prod
     if "category_id" in changes:
         _assert_category(db, changes["category_id"])
     if "location_id" in changes:
-        _assert_location(db, changes["location_id"])
+        _assert_location(db, changes["location_id"], product.tenant_id or resolve_tenant_id(db, actor))
     if "business_id" in changes:
         _assert_business_owned(db, changes["business_id"], actor)
     if "status" in changes:

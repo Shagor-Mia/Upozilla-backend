@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -16,6 +16,7 @@ from app.core.dependencies import (
 from app.core.pagination import PageParams, Paginated
 from app.core.rate_limit import rate_limit_by_user
 from app.core.rbac import Permission
+from app.core.tenant import resolve_tenant_id
 from app.db.models import ListingType
 from app.modules.exchange import favorites, reports, service
 from app.modules.exchange.lookup import get_public_listing
@@ -37,6 +38,7 @@ router = APIRouter(prefix="/exchange", tags=["exchange"])
 
 @router.get("/listings", response_model=Paginated[ExchangeListingResponse])
 def list_listings(
+    request: Request,
     category_id: uuid.UUID | None = None,
     location_id: uuid.UUID | None = None,
     q: str | None = None,
@@ -59,6 +61,8 @@ def list_listings(
         max_price=max_price,
         sort=sort,
         page=page,
+        viewer=viewer,
+        request=request,
     )
     return Paginated(
         items=service.to_responses(db, rows, viewer, locale), total=total, page=page.page, page_size=page.page_size
@@ -87,11 +91,12 @@ def all_listings_for_admin(
 @router.get("/listings/{listing_id}", response_model=ExchangeListingResponse)
 def get_listing(
     listing_id: uuid.UUID,
+    request: Request,
     locale: str = Depends(get_locale),
     db: Session = Depends(get_db),
     viewer: CurrentUser | None = Depends(get_optional_user),
 ) -> ExchangeListingResponse:
-    return service.to_responses(db, [service.get_one(db, listing_id, viewer)], viewer, locale)[0]
+    return service.to_responses(db, [service.get_one(db, listing_id, viewer, request=request)], viewer, locale)[0]
 
 
 @router.post(
@@ -143,7 +148,7 @@ def reveal_contact(
     db: Session = Depends(get_db),
     actor: CurrentUser = Depends(require_phone_verified),
 ) -> ContactRevealResponse:
-    listing = get_public_listing(db, ListingType.EXCHANGE, listing_id)
+    listing = get_public_listing(db, ListingType.EXCHANGE, listing_id, tenant_id=resolve_tenant_id(db, actor))
     if listing.seller_user_id == actor.uuid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="you cannot reveal contact info on your own listing")
     name, phone = service.reveal_seller_phone(db, listing)
@@ -160,7 +165,9 @@ def add_favorite(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> FavoriteResponse:
-    favorites.set_favorite(db, current_user.uuid, listing_type, listing_id, on=True)
+    favorites.set_favorite(
+        db, current_user.uuid, listing_type, listing_id, on=True, tenant_id=resolve_tenant_id(db, current_user)
+    )
     return FavoriteResponse(listing_type=listing_type, listing_id=listing_id, is_favorited=True)
 
 
@@ -171,7 +178,9 @@ def remove_favorite(
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> FavoriteResponse:
-    favorites.set_favorite(db, current_user.uuid, listing_type, listing_id, on=False)
+    favorites.set_favorite(
+        db, current_user.uuid, listing_type, listing_id, on=False, tenant_id=resolve_tenant_id(db, current_user)
+    )
     return FavoriteResponse(listing_type=listing_type, listing_id=listing_id, is_favorited=False)
 
 
@@ -182,8 +191,8 @@ def list_favorites(
     current_user: CurrentUser = Depends(get_current_user),
 ) -> FavoritesResponse:
     grouped = favorites.list_user_favorites(db, current_user.uuid)
-    exchange_rows = service.get_by_ids_public(db, grouped[ListingType.EXCHANGE])
-    product_rows = marketplace_service.get_by_ids_public(db, grouped[ListingType.MARKETPLACE])
+    exchange_rows = service.get_by_ids_public(db, grouped[ListingType.EXCHANGE], viewer=current_user)
+    product_rows = marketplace_service.get_by_ids_public(db, grouped[ListingType.MARKETPLACE], viewer=current_user)
     return FavoritesResponse(
         exchange=service.to_responses(db, exchange_rows, current_user, locale),
         marketplace=marketplace_service.to_responses(db, product_rows, current_user, locale),

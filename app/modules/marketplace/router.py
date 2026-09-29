@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -16,6 +16,7 @@ from app.core.dependencies import (
 from app.core.pagination import PageParams, Paginated
 from app.core.rate_limit import rate_limit_by_user
 from app.core.rbac import Permission
+from app.core.tenant import resolve_tenant_id
 from app.db.models import ListingType
 from app.modules.exchange.lookup import get_public_listing
 from app.modules.exchange.schemas import ListingSort
@@ -33,6 +34,7 @@ def list_categories(locale: str = Depends(get_locale), db: Session = Depends(get
 
 @router.get("/products", response_model=Paginated[ProductResponse])
 def list_products(
+    request: Request,
     category_id: uuid.UUID | None = None,
     location_id: uuid.UUID | None = None,
     business_id: uuid.UUID | None = None,
@@ -57,6 +59,8 @@ def list_products(
         max_price=max_price,
         sort=sort,
         page=page,
+        viewer=viewer,
+        request=request,
     )
     return Paginated(
         items=service.to_responses(db, rows, viewer, locale), total=total, page=page.page, page_size=page.page_size
@@ -85,11 +89,12 @@ def all_products_for_admin(
 @router.get("/products/{product_id}", response_model=ProductResponse)
 def get_product(
     product_id: uuid.UUID,
+    request: Request,
     locale: str = Depends(get_locale),
     db: Session = Depends(get_db),
     viewer: CurrentUser | None = Depends(get_optional_user),
 ) -> ProductResponse:
-    return service.to_responses(db, [service.get_one(db, product_id, viewer)], viewer, locale)[0]
+    return service.to_responses(db, [service.get_one(db, product_id, viewer, request=request)], viewer, locale)[0]
 
 
 @router.post(
@@ -138,7 +143,7 @@ def reveal_contact(
     db: Session = Depends(get_db),
     actor: CurrentUser = Depends(require_phone_verified),
 ) -> ContactRevealResponse:
-    product = get_public_listing(db, ListingType.MARKETPLACE, product_id)
+    product = get_public_listing(db, ListingType.MARKETPLACE, product_id, tenant_id=resolve_tenant_id(db, actor))
     if product.seller_user_id == actor.uuid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="you cannot reveal contact info on your own listing")
     name, phone = service.reveal_seller_phone(db, product)

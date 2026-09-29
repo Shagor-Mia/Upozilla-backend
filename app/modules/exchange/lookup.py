@@ -29,8 +29,19 @@ def is_publicly_visible(listing: Listing) -> bool:
     return listing.status == active and listing.moderation_status == ModerationStatus.APPROVED.value
 
 
-def get_public_listing(db: Session, listing_type: ListingType, listing_id: uuid.UUID) -> Listing:
+def get_public_listing(
+    db: Session, listing_type: ListingType, listing_id: uuid.UUID, *, tenant_id: uuid.UUID | None = None
+) -> Listing:
+    """`tenant_id` (normally the caller's own resolved tenant) is enforced the
+    same permissive way as `content_scope.assert_tenant_match`: a listing with
+    no `tenant_id` of its own (legacy/unbackfilled) is never hidden, but a
+    listing that belongs to a *different* tenant 404s instead of letting one
+    tenant's user favorite, report or contact-reveal another tenant's listing."""
     listing = find_listing(db, listing_type, listing_id)
-    if listing is None or not is_publicly_visible(listing):
+    if (
+        listing is None
+        or not is_publicly_visible(listing)
+        or (tenant_id is not None and listing.tenant_id and listing.tenant_id != tenant_id)
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="listing not found")
     return listing

@@ -6,11 +6,22 @@ from sqlalchemy.orm import Session
 from app.core import embeddings, news_ai
 from app.core.content_scope import assert_tenant_match, tenant_scoped
 from app.core.dependencies import CurrentUser
+from app.core.location_scope import assert_location_in_tenant
 from app.core.pagination import PageParams
 from app.core.tenant import resolve_tenant_id
 from app.db.models.ai import KnowledgeSourceType
+from app.db.models.location import Location
 from app.db.models.news import NewsArticle, NewsSource
 from app.modules.news.schemas import NewsArticleCreate, NewsArticleUpdate
+
+
+def _assert_location(db: Session, location_id: uuid.UUID, tenant_id: uuid.UUID | None) -> None:
+    # Unlike marketplace/school/office listings, a news article's `location_id`
+    # is genuinely optional (national/tenant-wide news has none) - callers only
+    # invoke this when a location was actually given.
+    if db.query(Location.id).filter(Location.id == location_id).first() is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unknown location")
+    assert_location_in_tenant(db, location_id, tenant_id)
 
 
 def _schedule_reindex(background_tasks: BackgroundTasks, article: NewsArticle) -> None:
@@ -67,7 +78,10 @@ def get_article_by_slug(db: Session, slug: str, *, request: Request | None = Non
 def create_article(
     db: Session, payload: NewsArticleCreate, background_tasks: BackgroundTasks, actor: CurrentUser
 ) -> NewsArticle:
-    article = NewsArticle(tenant_id=resolve_tenant_id(db, actor), **payload.model_dump())
+    tenant_id = resolve_tenant_id(db, actor)
+    if payload.location_id is not None:
+        _assert_location(db, payload.location_id, tenant_id)
+    article = NewsArticle(tenant_id=tenant_id, **payload.model_dump())
     db.add(article)
     db.commit()
     db.refresh(article)
@@ -97,7 +111,10 @@ def update_article(
     actor: CurrentUser,
 ) -> NewsArticle:
     article = get_article_for_admin(db, article_id, actor)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    if "location_id" in changes and changes["location_id"] is not None:
+        _assert_location(db, changes["location_id"], article.tenant_id or resolve_tenant_id(db, actor))
+    for field, value in changes.items():
         setattr(article, field, value)
     db.commit()
     db.refresh(article)

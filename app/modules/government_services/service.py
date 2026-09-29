@@ -1,17 +1,25 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import BackgroundTasks, Request
+from fastapi import BackgroundTasks, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core import embeddings, translation
 from app.core.content_scope import assert_tenant_match, tenant_scoped
 from app.core.dependencies import CurrentUser
+from app.core.location_scope import assert_location_in_tenant
 from app.core.pagination import PageParams
 from app.core.tenant import resolve_tenant_id
 from app.db.models.ai import KnowledgeSourceType
+from app.db.models.location import Location
 from app.db.models.service import LicenseApplication, Service, ServiceCategory
 from app.modules.government_services.schemas import LicenseApplicationCreate, ServiceCreate, ServiceUpdate
+
+
+def _assert_location(db: Session, location_id: uuid.UUID, tenant_id: uuid.UUID | None) -> None:
+    if db.query(Location.id).filter(Location.id == location_id).first() is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unknown location")
+    assert_location_in_tenant(db, location_id, tenant_id)
 
 
 def _schedule_reindex(background_tasks: BackgroundTasks, svc: Service) -> None:
@@ -56,7 +64,9 @@ def get_service(db: Session, service_id: uuid.UUID, *, request: Request | None =
 def create_service(
     db: Session, payload: ServiceCreate, background_tasks: BackgroundTasks, actor: CurrentUser
 ) -> Service:
-    svc = Service(tenant_id=resolve_tenant_id(db, actor), **payload.model_dump())
+    tenant_id = resolve_tenant_id(db, actor)
+    _assert_location(db, payload.location_id, tenant_id)
+    svc = Service(tenant_id=tenant_id, **payload.model_dump())
     db.add(svc)
     db.commit()
     db.refresh(svc)
@@ -77,7 +87,10 @@ def update_service(
     db: Session, service_id, payload: ServiceUpdate, background_tasks: BackgroundTasks, actor: CurrentUser
 ) -> Service:
     svc = get_service_by_id(db, service_id, actor)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    if "location_id" in changes and changes["location_id"] is not None:
+        _assert_location(db, changes["location_id"], svc.tenant_id or resolve_tenant_id(db, actor))
+    for field, value in changes.items():
         setattr(svc, field, value)
     db.commit()
     db.refresh(svc)

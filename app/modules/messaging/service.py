@@ -53,7 +53,7 @@ def other_participant_id(conversation: Conversation, user_id: uuid.UUID) -> uuid
 def get_or_create_conversation(
     db: Session, buyer: CurrentUser, listing_type: ListingType, listing_id: uuid.UUID
 ) -> Conversation:
-    listing = get_public_listing(db, listing_type, listing_id)
+    listing = get_public_listing(db, listing_type, listing_id, tenant_id=resolve_tenant_id(db, buyer))
     if listing.seller_user_id == buyer.uuid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="you cannot message yourself about your own listing")
 

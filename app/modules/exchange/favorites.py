@@ -8,8 +8,16 @@ from app.db.models import ListingFavorite, ListingType
 from app.modules.exchange.lookup import get_public_listing
 
 
-def set_favorite(db: Session, user_id: uuid.UUID, listing_type: ListingType, listing_id: uuid.UUID, on: bool) -> bool:
-    get_public_listing(db, listing_type, listing_id)
+def set_favorite(
+    db: Session,
+    user_id: uuid.UUID,
+    listing_type: ListingType,
+    listing_id: uuid.UUID,
+    on: bool,
+    *,
+    tenant_id: uuid.UUID | None = None,
+) -> bool:
+    get_public_listing(db, listing_type, listing_id, tenant_id=tenant_id)
     existing = (
         db.query(ListingFavorite)
         .filter(

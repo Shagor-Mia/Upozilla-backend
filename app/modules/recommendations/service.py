@@ -71,7 +71,7 @@ def _fetch_bundle(db: Session, viewer: CurrentUser | None, locale: str, location
         limit,
     )
     products = marketplace_service.to_responses(
-        db, marketplace_service.get_by_ids_public(db, product_ids), viewer, locale
+        db, marketplace_service.get_by_ids_public(db, product_ids, viewer=viewer), viewer, locale
     )
 
     exchange_ids = _trending_ids(
@@ -86,7 +86,7 @@ def _fetch_bundle(db: Session, viewer: CurrentUser | None, locale: str, location
         limit,
     )
     exchange_listings = exchange_service.to_responses(
-        db, exchange_service.get_by_ids_public(db, exchange_ids), viewer, locale
+        db, exchange_service.get_by_ids_public(db, exchange_ids, viewer=viewer), viewer, locale
     )
 
     places_query = db.query(Place).filter(Place.status == "published")

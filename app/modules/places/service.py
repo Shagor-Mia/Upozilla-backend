@@ -7,6 +7,7 @@ from app.core import embeddings, translation
 from app.core.content_scope import assert_tenant_match, tenant_scoped
 from app.core.dependencies import CurrentUser
 from app.core.geo import NearParams, apply_near_paginated
+from app.core.location_scope import assert_location_in_tenant
 from app.core.pagination import PageParams
 from app.core.tenant import resolve_tenant_id
 from app.db.models.ai import KnowledgeSourceType
@@ -18,9 +19,10 @@ from app.modules.moderation import service as moderation_service
 from app.modules.places.schemas import PlaceCreate, PlaceSubmit, PlaceUpdate
 
 
-def _assert_location(db: Session, location_id: uuid.UUID) -> None:
+def _assert_location(db: Session, location_id: uuid.UUID, tenant_id: uuid.UUID | None) -> None:
     if db.query(Location.id).filter(Location.id == location_id).first() is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="unknown location")
+    assert_location_in_tenant(db, location_id, tenant_id)
 
 
 def _schedule_reindex(background_tasks: BackgroundTasks, place: Place) -> None:
@@ -113,8 +115,8 @@ def submit_place(
 ) -> Place:
     """Public form (any logged-in user, POST /places/submit) - always enters
     the moderation queue pending, never auto-approved (product decision)."""
-    _assert_location(db, payload.location_id)
     tenant_id = resolve_tenant_id(db, actor)
+    _assert_location(db, payload.location_id, tenant_id)
     place = Place(
         tenant_id=tenant_id,
         location_id=payload.location_id,

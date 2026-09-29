@@ -18,7 +18,8 @@ def create_report(
     listing_id: uuid.UUID,
     payload: ListingReportCreate,
 ) -> ListingReportResponse:
-    listing = get_public_listing(db, listing_type, listing_id)
+    tenant_id = resolve_tenant_id(db, reporter)
+    listing = get_public_listing(db, listing_type, listing_id, tenant_id=tenant_id)
     if listing.seller_user_id == reporter.uuid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="you cannot report your own listing")
 
@@ -36,7 +37,7 @@ def create_report(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="you already reported this listing")
 
     report = ListingReport(
-        tenant_id=resolve_tenant_id(db, reporter),
+        tenant_id=tenant_id,
         listing_type=listing_type.value,
         listing_id=listing_id,
         reporter_user_id=reporter.uuid,

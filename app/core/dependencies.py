@@ -8,6 +8,7 @@ from app.core.database import get_db
 from app.core.i18n import resolve_locale
 from app.core.rbac import Permission, normalize_role, permissions_for
 from app.core.security import decode_token
+from app.db.models.rbac import RoleRow, UserRole
 from app.db.models.user import User
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -62,8 +63,24 @@ def _payload_to_user(payload: dict) -> CurrentUser:
     )
 
 
+def _fresh_role_names(db: Session, user: User) -> list[str]:
+    """Primary role plus any scoped `user_roles` assignments, read live from the
+    DB. Mirrors `auth.service.get_role_names` (duplicated rather than imported
+    to avoid a circular import: `auth.service` itself imports `CurrentUser`
+    from this module)."""
+    names = [user.role]
+    extra = (
+        db.query(RoleRow.name).join(UserRole, UserRole.role_id == RoleRow.id).filter(UserRole.user_id == user.id).all()
+    )
+    for (name,) in extra:
+        if name not in names:
+            names.append(name)
+    return names
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
 ) -> CurrentUser:
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
@@ -72,7 +89,27 @@ def get_current_user(
     if payload is None or payload.get("type") != "access":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
-    return _payload_to_user(payload)
+    # A suspend, role change or permission grant revokes refresh tokens
+    # (admin/service.py) but an already-issued access token stays
+    # cryptographically valid until it expires - re-checking status/role
+    # against the DB on every request closes that window instead of trusting
+    # (up to ACCESS_TOKEN_EXPIRE_MINUTES stale) JWT claims for privileged
+    # actions. `get_optional_user` below stays JWT-only: it only powers
+    # personalisation (e.g. `is_favorited`) on public, non-privileged reads.
+    user = db.query(User).filter(User.id == uuid.UUID(payload["sub"])).first()
+    if user is None or user.status != "active":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="account unavailable")
+
+    return CurrentUser(
+        user_id=str(user.id),
+        tenant_id=str(user.tenant_id) if user.tenant_id else None,
+        role=user.role,
+        roles=_fresh_role_names(db, user),
+        phone_verified=user.phone_verified_at is not None,
+        can_manage_hospital=user.can_manage_hospital,
+        can_manage_school=user.can_manage_school,
+        expires_at=payload.get("exp"),
+    )
 
 
 def get_optional_user(
