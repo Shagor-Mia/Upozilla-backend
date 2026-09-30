@@ -1,4 +1,6 @@
 import uuid
+import time
+from threading import Lock
 
 from fastapi import Request
 from sqlalchemy.orm import Session
@@ -10,6 +12,37 @@ from app.db.models.tenant import Tenant
 # the tenant - only consulted for anonymous requests (an authenticated user's
 # own tenant always wins, so a header can't be used to hop tenants).
 TENANT_HEADER = "X-Tenant-Slug"
+TENANT_CACHE_TTL_SECONDS = 30.0
+
+_cache_lock = Lock()
+_slug_cache: dict[str, tuple[uuid.UUID, float]] = {}
+_fallback_cache: tuple[uuid.UUID | None, float] = (None, 0.0)
+
+
+def _cached_slug(slug: str) -> uuid.UUID | None:
+    now = time.monotonic()
+    with _cache_lock:
+        cached = _slug_cache.get(slug)
+        if cached and cached[1] > now:
+            return cached[0]
+    return None
+
+
+def _remember_slug(slug: str, tenant_id: uuid.UUID) -> None:
+    with _cache_lock:
+        _slug_cache[slug] = (tenant_id, time.monotonic() + TENANT_CACHE_TTL_SECONDS)
+
+
+def _cached_fallback() -> uuid.UUID | None:
+    tenant_id, expires_at = _fallback_cache
+    if expires_at > time.monotonic():
+        return tenant_id
+    return None
+
+
+def _remember_fallback(tenant_id: uuid.UUID | None) -> None:
+    global _fallback_cache
+    _fallback_cache = (tenant_id, time.monotonic() + TENANT_CACHE_TTL_SECONDS)
 
 
 def resolve_tenant_id(
@@ -26,8 +59,17 @@ def resolve_tenant_id(
     if request is not None:
         slug = request.headers.get(TENANT_HEADER)
         if slug:
+            cached = _cached_slug(slug)
+            if cached is not None:
+                return cached
             tenant = db.query(Tenant).filter(Tenant.slug == slug, Tenant.status == "active").first()
             if tenant:
+                _remember_slug(slug, tenant.id)
                 return tenant.id
+    cached = _cached_fallback()
+    if cached is not None:
+        return cached
     tenant = db.query(Tenant).filter(Tenant.status == "active").order_by(Tenant.created_at).first()
-    return tenant.id if tenant else None
+    tenant_id = tenant.id if tenant else None
+    _remember_fallback(tenant_id)
+    return tenant_id

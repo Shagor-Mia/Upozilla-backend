@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import CurrentUser
 from app.core.tenant import resolve_tenant_id
-from app.db.models import Conversation, ListingType, Message, User
-from app.modules.exchange.lookup import find_listing, get_public_listing
+from app.db.models import Conversation, ExchangeListing, ListingType, MarketplaceProduct, Message, User
+from app.modules.exchange.lookup import get_public_listing
 from app.modules.messaging.schemas import (
     ConversationParticipant,
     ConversationResponse,
@@ -83,7 +83,7 @@ def get_or_create_conversation(
 def _to_conversation_responses(db: Session, rows: list[Conversation], user: CurrentUser) -> list[ConversationResponse]:
     if not rows:
         return []
-    user_ids = {r.buyer_id for r in rows} | {r.seller_id for r in rows}
+    user_ids = {user_id for r in rows for user_id in (r.buyer_id, r.seller_id) if user_id}
     names = dict(db.query(User.id, User.full_name).filter(User.id.in_(user_ids)).all())
     conversation_ids = [r.id for r in rows]
 
@@ -98,15 +98,48 @@ def _to_conversation_responses(db: Session, rows: list[Conversation], user: Curr
         .all()
     )
 
+    last_message_rank = (
+        db.query(
+            Message.id.label("message_id"),
+            func.row_number()
+            .over(
+                partition_by=Message.conversation_id,
+                order_by=(Message.created_at.desc(), Message.id.desc()),
+            )
+            .label("rank"),
+        )
+        .filter(Message.conversation_id.in_(conversation_ids))
+        .subquery()
+    )
+    last_messages = dict(
+        db.query(Message.conversation_id, Message)
+        .join(last_message_rank, Message.id == last_message_rank.c.message_id)
+        .filter(last_message_rank.c.rank == 1)
+        .all()
+    )
+
+    exchange_ids = [r.listing_id for r in rows if r.listing_type == ListingType.EXCHANGE.value]
+    product_ids = [r.listing_id for r in rows if r.listing_type == ListingType.MARKETPLACE.value]
+    listings = {}
+    if exchange_ids:
+        listings.update(
+            {
+                (ListingType.EXCHANGE.value, listing.id): listing
+                for listing in db.query(ExchangeListing).filter(ExchangeListing.id.in_(exchange_ids)).all()
+            }
+        )
+    if product_ids:
+        listings.update(
+            {
+                (ListingType.MARKETPLACE.value, listing.id): listing
+                for listing in db.query(MarketplaceProduct).filter(MarketplaceProduct.id.in_(product_ids)).all()
+            }
+        )
+
     responses = []
     for row in rows:
-        last = (
-            db.query(Message)
-            .filter(Message.conversation_id == row.id)
-            .order_by(Message.created_at.desc())
-            .first()
-        )
-        listing = find_listing(db, ListingType(row.listing_type), row.listing_id)
+        last = last_messages.get(row.id)
+        listing = listings.get((row.listing_type, row.listing_id))
         buyer = ConversationParticipant(id=row.buyer_id, full_name=names.get(row.buyer_id, ""))
         seller = ConversationParticipant(id=row.seller_id, full_name=names.get(row.seller_id, ""))
         responses.append(

@@ -22,6 +22,16 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         sync: false
+      - key: WEB_CONCURRENCY
+        value: 2
+      - key: DB_POOL_SIZE
+        value: 5
+      - key: DB_MAX_OVERFLOW
+        value: 5
+      - key: PUBLIC_GET_CACHE_SECONDS
+        value: 30
+      - key: AUTH_CONTEXT_CACHE_SECONDS
+        value: 5
 
   - type: worker
     name: upazila-worker

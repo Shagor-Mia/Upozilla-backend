@@ -1,0 +1,48 @@
+services:
+  lb-api:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers ${LB_API_WORKERS:-1} --no-access-log
+    volumes:
+      - .:/code
+    environment:
+      ENV: local
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/upazila
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: local-load-test-secret
+      DB_POOL_SIZE: 5
+      DB_MAX_OVERFLOW: 5
+      PUBLIC_GET_CACHE_SECONDS: 30
+      AUTH_CONTEXT_CACHE_SECONDS: 5
+      SMS_GATEWAY: console
+    depends_on:
+      - postgres
+      - redis
+
+  haproxy:
+    image: haproxy:2.9-alpine
+    ports:
+      - "8020:80"
+      - "8424:8404"
+    volumes:
+      - ./lb/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - lb-api
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: upazila
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_lb_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6381:6379"
+
+volumes:
+  postgres_lb_data:

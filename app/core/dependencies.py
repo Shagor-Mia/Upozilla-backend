@@ -1,9 +1,13 @@
 import uuid
+from hashlib import sha256
+from threading import RLock
+from time import monotonic
 
 from fastapi import Depends, Header, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.i18n import resolve_locale
 from app.core.rbac import Permission, normalize_role, permissions_for
@@ -12,6 +16,9 @@ from app.db.models.rbac import RoleRow, UserRole
 from app.db.models.user import User
 
 bearer_scheme = HTTPBearer(auto_error=False)
+_AUTH_CONTEXT_CACHE: dict[str, tuple[float, "CurrentUser"]] = {}
+_AUTH_CONTEXT_CACHE_LOCK = RLock()
+_AUTH_CONTEXT_CACHE_MAX = 2048
 
 
 class CurrentUser:
@@ -48,6 +55,56 @@ class CurrentUser:
 
     def has_permission(self, permission: Permission) -> bool:
         return permission in self.permissions
+
+
+def _clone_user(user: CurrentUser) -> CurrentUser:
+    return CurrentUser(
+        user_id=user.user_id,
+        tenant_id=user.tenant_id,
+        role=user.role,
+        roles=list(user.roles),
+        phone_verified=user.phone_verified,
+        can_manage_hospital=user.can_manage_hospital,
+        can_manage_school=user.can_manage_school,
+        expires_at=user.expires_at,
+    )
+
+
+def _auth_cache_key(token: str) -> str:
+    return sha256(token.encode("utf-8")).hexdigest()
+
+
+def _get_cached_current_user(token: str) -> CurrentUser | None:
+    ttl = settings.AUTH_CONTEXT_CACHE_SECONDS
+    if ttl <= 0:
+        return None
+    key = _auth_cache_key(token)
+    now = monotonic()
+    with _AUTH_CONTEXT_CACHE_LOCK:
+        entry = _AUTH_CONTEXT_CACHE.get(key)
+        if entry is None:
+            return None
+        expires_at, user = entry
+        if expires_at <= now:
+            _AUTH_CONTEXT_CACHE.pop(key, None)
+            return None
+        return _clone_user(user)
+
+
+def _set_cached_current_user(token: str, user: CurrentUser) -> None:
+    ttl = settings.AUTH_CONTEXT_CACHE_SECONDS
+    if ttl <= 0:
+        return
+    now = monotonic()
+    key = _auth_cache_key(token)
+    with _AUTH_CONTEXT_CACHE_LOCK:
+        if len(_AUTH_CONTEXT_CACHE) >= _AUTH_CONTEXT_CACHE_MAX:
+            expired = [k for k, (expires_at, _user) in _AUTH_CONTEXT_CACHE.items() if expires_at <= now]
+            for expired_key in expired:
+                _AUTH_CONTEXT_CACHE.pop(expired_key, None)
+            while len(_AUTH_CONTEXT_CACHE) >= _AUTH_CONTEXT_CACHE_MAX:
+                _AUTH_CONTEXT_CACHE.pop(next(iter(_AUTH_CONTEXT_CACHE)))
+        _AUTH_CONTEXT_CACHE[key] = (now + ttl, _clone_user(user))
 
 
 def _payload_to_user(payload: dict) -> CurrentUser:
@@ -89,6 +146,10 @@ def get_current_user(
     if payload is None or payload.get("type") != "access":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
+    cached = _get_cached_current_user(credentials.credentials)
+    if cached is not None:
+        return cached
+
     # A suspend, role change or permission grant revokes refresh tokens
     # (admin/service.py) but an already-issued access token stays
     # cryptographically valid until it expires - re-checking status/role
@@ -100,7 +161,7 @@ def get_current_user(
     if user is None or user.status != "active":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="account unavailable")
 
-    return CurrentUser(
+    current_user = CurrentUser(
         user_id=str(user.id),
         tenant_id=str(user.tenant_id) if user.tenant_id else None,
         role=user.role,
@@ -110,6 +171,8 @@ def get_current_user(
         can_manage_school=user.can_manage_school,
         expires_at=payload.get("exp"),
     )
+    _set_cached_current_user(credentials.credentials, current_user)
+    return current_user
 
 
 def get_optional_user(

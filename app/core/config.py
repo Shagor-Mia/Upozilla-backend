@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20
     DB_POOL_RECYCLE: int = 1800
+    # Short TTL edge/Redis cache for anonymous public GETs. This is deliberately
+    # small so editorial/admin changes converge quickly even without explicit
+    # invalidation, while absorbing mobile/web refresh bursts.
+    PUBLIC_GET_CACHE_SECONDS: int = 30
+    # Short in-process cache for authenticated user/role lookups. Access
+    # tokens are still decoded on every request; this only avoids repeat DB
+    # reads during mobile/web bursts from the same session.
+    AUTH_CONTEXT_CACHE_SECONDS: int = 5
 
     JWT_SECRET_KEY: str = "change-me-in-env"
     JWT_ALGORITHM: str = "HS256"

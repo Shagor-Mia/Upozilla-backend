@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import settings
+from app.core.cache_middleware import PublicGetCacheMiddleware
 from app.core.ws_manager import manager as ws_manager
 from app.modules.admin.router import router as admin_router
 from app.modules.ai.router import router as ai_router
@@ -65,6 +66,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(PublicGetCacheMiddleware)
 
 logger = logging.getLogger(__name__)
 
